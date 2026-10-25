@@ -1,0 +1,159 @@
+{
+  "title": "Super Mario 64 - Snow Mountain (Cool, Cool Mountain)",
+  "artist": "Koji Kondo",
+  "bpm": 140,
+  "timeSignature": [4, 4],
+  "totalBeats": 32,
+  "keys": [
+    {
+      "beat": 1,
+      "scale": "major",
+      "tonic": "C"
+    }
+  ],
+  "chords": [
+    {
+      "beat": 1,
+      "measure": 1,
+      "duration": 4,
+      "roman": "I",
+      "symbol": "C",
+      "root": "1",
+      "rootMidi": 60,
+      "midiNotes": [60, 64, 67]
+    },
+    {
+      "beat": 5,
+      "measure": 2,
+      "duration": 4,
+      "roman": "IV",
+      "symbol": "F",
+      "root": "4",
+      "rootMidi": 65,
+      "midiNotes": [60, 65, 69]
+    },
+    {
+      "beat": 9,
+      "measure": 3,
+      "duration": 4,
+      "roman": "vii°/V",
+      "symbol": "F#°",
+      "root": "#4",
+      "rootMidi": 66,
+      "midiNotes": [60, 66, 69]
+    },
+    {
+      "beat": 13,
+      "measure": 4,
+      "duration": 4,
+      "roman": "V",
+      "symbol": "G",
+      "root": "5",
+      "rootMidi": 67,
+      "midiNotes": [59, 62, 67]
+    },
+    {
+      "beat": 17,
+      "measure": 5,
+      "duration": 4,
+      "roman": "iii",
+      "symbol": "Em",
+      "root": "3",
+      "rootMidi": 64,
+      "midiNotes": [59, 64, 67]
+    },
+    {
+      "beat": 21,
+      "measure": 6,
+      "duration": 4,
+      "roman": "vi",
+      "symbol": "Am",
+      "root": "6",
+      "rootMidi": 69,
+      "midiNotes": [60, 64, 69]
+    },
+    {
+      "beat": 25,
+      "measure": 7,
+      "duration": 4,
+      "roman": "ii",
+      "symbol": "Dm",
+      "root": "2",
+      "rootMidi": 62,
+      "midiNotes": [62, 65, 69]
+    },
+    {
+      "beat": 29,
+      "measure": 8,
+      "duration": 4,
+      "roman": "V⁷",
+      "symbol": "G⁷",
+      "root": "5",
+      "rootMidi": 67,
+      "midiNotes": [59, 62, 65, 67]
+    }
+  ],
+  "notes": [
+    { "beat": 1.0, "duration": 0.5, "sd": "5", "octave": 0 },
+    { "beat": 1.5, "duration": 0.5, "sd": "1", "octave": 1 },
+    { "beat": 2.0, "duration": 0.5, "sd": "2", "octave": 1 },
+    { "beat": 2.5, "duration": 0.5, "sd": "3", "octave": 1 },
+    { "beat": 3.0, "duration": 1.0, "sd": "5", "octave": 1 },
+    { "beat": 4.0, "duration": 0.5, "sd": "3", "octave": 1 },
+    { "beat": 4.5, "duration": 0.5, "sd": "1", "octave": 1 },
+
+    { "beat": 5.0, "duration": 0.5, "sd": "6", "octave": 0 },
+    { "beat": 5.5, "duration": 0.5, "sd": "2", "octave": 1 },
+    { "beat": 6.0, "duration": 0.5, "sd": "3", "octave": 1 },
+    { "beat": 6.5, "duration": 0.5, "sd": "4", "octave": 1 },
+    { "beat": 7.0, "duration": 1.0, "sd": "6", "octave": 1 },
+    { "beat": 8.0, "duration": 0.5, "sd": "4", "octave": 1 },
+    { "beat": 8.5, "duration": 0.5, "sd": "2", "octave": 1 },
+
+    { "beat": 9.0, "duration": 0.5, "sd": "#4", "octave": 1 },
+    { "beat": 9.5, "duration": 0.5, "sd": "6", "octave": 1 },
+    { "beat": 10.0, "duration": 0.5, "sd": "1", "octave": 2 },
+    { "beat": 10.5, "duration": 0.5, "sd": "2", "octave": 2 },
+    { "beat": 11.0, "duration": 1.0, "sd": "7", "octave": 1 },
+    { "beat": 12.0, "duration": 0.5, "sd": "5", "octave": 1 },
+    { "beat": 12.5, "duration": 0.5, "sd": "4", "octave": 1 },
+
+    { "beat": 13.0, "duration": 1.0, "sd": "3", "octave": 1 },
+    { "beat": 14.0, "duration": 0.5, "sd": "2", "octave": 1 },
+    { "beat": 14.5, "duration": 0.5, "sd": "1", "octave": 1 },
+    { "beat": 15.0, "duration": 0.5, "sd": "7", "octave": 0 },
+    { "beat": 15.5, "duration": 0.5, "sd": "1", "octave": 1 },
+    { "beat": 16.0, "duration": 1.0, "sd": "2", "octave": 1 },
+
+    { "beat": 17.0, "duration": 0.5, "sd": "3", "octave": 1 },
+    { "beat": 17.5, "duration": 0.5, "sd": "5", "octave": 1 },
+    { "beat": 18.0, "duration": 0.5, "sd": "7", "octave": 1 },
+    { "beat": 18.5, "duration": 0.5, "sd": "1", "octave": 2 },
+    { "beat": 19.0, "duration": 1.0, "sd": "7", "octave": 1 },
+    { "beat": 20.0, "duration": 0.5, "sd": "5", "octave": 1 },
+    { "beat": 20.5, "duration": 0.5, "sd": "3", "octave": 1 },
+
+    { "beat": 21.0, "duration": 0.5, "sd": "6", "octave": 0 },
+    { "beat": 21.5, "duration": 0.5, "sd": "1", "octave": 1 },
+    { "beat": 22.0, "duration": 0.5, "sd": "3", "octave": 1 },
+    { "beat": 22.5, "duration": 0.5, "sd": "6", "octave": 1 },
+    { "beat": 23.0, "duration": 1.0, "sd": "5", "octave": 1 },
+    { "beat": 24.0, "duration": 0.5, "sd": "3", "octave": 1 },
+    { "beat": 24.5, "duration": 0.5, "sd": "1", "octave": 1 },
+
+    { "beat": 25.0, "duration": 0.5, "sd": "2", "octave": 1 },
+    { "beat": 25.5, "duration": 0.5, "sd": "4", "octave": 1 },
+    { "beat": 26.0, "duration": 0.5, "sd": "6", "octave": 1 },
+    { "beat": 26.5, "duration": 0.5, "sd": "1", "octave": 2 },
+    { "beat": 27.0, "duration": 1.0, "sd": "7", "octave": 1 },
+    { "beat": 28.0, "duration": 0.5, "sd": "5", "octave": 1 },
+    { "beat": 28.5, "duration": 0.5, "sd": "4", "octave": 1 },
+
+    { "beat": 29.0, "duration": 0.5, "sd": "3", "octave": 1 },
+    { "beat": 29.5, "duration": 0.5, "sd": "2", "octave": 1 },
+    { "beat": 30.0, "duration": 0.5, "sd": "7", "octave": 0 },
+    { "beat": 30.5, "duration": 0.5, "sd": "2", "octave": 1 },
+    { "beat": 31.0, "duration": 1.5, "sd": "1", "octave": 1 },
+    { "beat": 32.5, "duration": 0.5, "sd": "1", "octave": 1, "isRest": true }
+  ]
+}
