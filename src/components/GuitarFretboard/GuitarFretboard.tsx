@@ -260,15 +260,12 @@ export default function GuitarFretboard() {
 
   // 1. Acorde activo en el instante actual
   const activeChord = useMemo(() => {
-    if (isPlaying) {
-      return (
-        song.chords.find(
-          (c) => currentBeat >= c.beat && currentBeat < c.beat + c.duration
-        ) || null
-      );
-    }
-    return song.chords[0] || null;
-  }, [isPlaying, currentBeat, song.chords]);
+    return (
+      song.chords.find(
+        (c) => currentBeat >= c.beat && currentBeat < c.beat + c.duration
+      ) || null
+    );
+  }, [currentBeat, song.chords]);
 
   // Postura de acorde activa (voicings de 6 cuerdas)
   const activeVoicing = useMemo<ChordVoicing | null>(() => {

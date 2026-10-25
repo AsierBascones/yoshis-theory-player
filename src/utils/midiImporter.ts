@@ -318,6 +318,11 @@ export async function parseMidiToUniversalSong(
     }
   }
 
+  const lastNoteEnd = melodyNotes.reduce((max, n) => Math.max(max, n.beat + n.duration), 1);
+  const lastChordEnd = chords.reduce((max, c) => Math.max(max, c.beat + c.duration), 1);
+  const absoluteEndBeat = Math.max(lastNoteEnd, lastChordEnd);
+  const finalTotalBars = Math.max(1, Math.ceil((absoluteEndBeat - 1) / beatsPerBar));
+
   return {
     id: `midi_${Date.now()}`,
     title: file.name.replace(/\.[^/.]+$/, ''),
@@ -331,7 +336,7 @@ export async function parseMidiToUniversalSong(
         name: 'Full Song',
         key: { tonic: keyTonic, scale: keyScale },
         beatsPerBar,
-        totalBars,
+        totalBars: finalTotalBars,
         melody: melodyNotes,
         chords,
       },

@@ -5,6 +5,8 @@ import { SCALE_MODES } from '../../utils/musicTheory';
 import TempoSwingPopover from './TempoSwingPopover';
 import KeyTransposePopover from './KeyTransposePopover';
 import MidiImportModal from './MidiImportModal';
+import SectionTabsBar from '../Navigation/SectionTabsBar';
+import ImportSectionModal from '../Import/ImportSectionModal';
 import { parseMidiToUniversalSong, type MidiParseOptions } from '../../utils/midiImporter';
 import { isHookpadJson, parseHookpadJson } from '../../utils/hookpadImporter';
 import type { ScaleMode } from '../../types/music';
@@ -49,14 +51,18 @@ export default function TransportBar() {
     setPixelsPerBeat,
     setRowHeight,
     setLoop,
+    isSustainActive,
+    toggleSustain,
   } = usePlayerStore();
 
   const [isTempoOpen, setIsTempoOpen] = useState(false);
   const [isKeyOpen, setIsKeyOpen] = useState(false);
 
-  // Estados para importación de archivos
+  // Estados para importación de archivos y secciones
   const [pendingMidiFile, setPendingMidiFile] = useState<File | null>(null);
   const [isMidiModalOpen, setIsMidiModalOpen] = useState<boolean>(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+  const [importModalJson, setImportModalJson] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const safeBeat = Math.max(1, Math.min(currentBeat, song.totalBeats));
@@ -97,45 +103,30 @@ export default function TransportBar() {
       const clipboardText = e.clipboardData?.getData('text') || '';
       if (isHookpadJson(clipboardText)) {
         e.preventDefault();
-        try {
-          const currentBpm = usePlayerStore.getState().bpm;
-          const imported = parseHookpadJson(clipboardText, currentBpm);
-          addSongToCatalog(imported);
-        } catch (err) {
-          console.error('Error al procesar JSON de Hookpad desde el portapapeles:', err);
-        }
+        setImportModalJson(clipboardText);
+        setIsImportModalOpen(true);
       }
     };
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [addSongToCatalog]);
+  }, []);
 
-  const handlePasteHookpad = useCallback(async () => {
-    const currentBpm = usePlayerStore.getState().bpm;
+  const handleOpenImportWithClipboard = useCallback(async () => {
     try {
       if (navigator.clipboard && navigator.clipboard.readText) {
         const text = await navigator.clipboard.readText();
-        if (isHookpadJson(text)) {
-          const imported = parseHookpadJson(text, currentBpm);
-          addSongToCatalog(imported);
+        if (text && isHookpadJson(text)) {
+          setImportModalJson(text);
+          setIsImportModalOpen(true);
           return;
         }
       }
     } catch {}
 
-    const manual = prompt('Pega aquí el código JSON copiado desde Hookpad (Ctrl + C):');
-    if (manual && isHookpadJson(manual)) {
-      try {
-        const imported = parseHookpadJson(manual, currentBpm);
-        addSongToCatalog(imported);
-      } catch (err) {
-        alert('Error al analizar los datos de Hookpad.');
-      }
-    } else if (manual) {
-      alert('El texto pegado no contiene una estructura JSON válida de Hookpad (debe incluir arrays "notes" o "chords").');
-    }
-  }, [addSongToCatalog]);
+    setImportModalJson('');
+    setIsImportModalOpen(true);
+  }, []);
 
   // ── Procesamiento de archivos importados (.json o .mid/.midi) ──
   const handleFileProcess = async (file: File) => {
@@ -147,9 +138,8 @@ export default function TransportBar() {
       try {
         const text = await file.text();
         if (isHookpadJson(text)) {
-          const currentBpm = usePlayerStore.getState().bpm;
-          const imported = parseHookpadJson(text, currentBpm);
-          addSongToCatalog(imported);
+          setImportModalJson(text);
+          setIsImportModalOpen(true);
           return;
         }
         const parsed = JSON.parse(text);
@@ -196,85 +186,25 @@ export default function TransportBar() {
       className="bg-gray-850 border-b border-gray-700 select-none shadow-md"
       style={{ background: '#131B2E' }}
     >
-      {/* ── 1. Barra Superior: Pestañas de Secciones Oficiales (All Sections | Intro | Verse | Chorus | Outro) ── */}
-      <div className="flex items-center justify-between px-6 py-2 border-b border-gray-700/60 flex-wrap gap-2 bg-gray-900/60">
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Selector de Canción del Catálogo Universal */}
-          <div className="flex items-center gap-1.5 mr-1">
-            <select
-              value={selectedSongId}
-              onChange={(e) => setSongId(e.target.value)}
-              className="bg-[#161d27] text-white border border-gray-700/80 hover:border-blue-500 rounded-md px-2.5 py-1 text-xs font-semibold focus:outline-none cursor-pointer transition-colors max-w-[220px] truncate"
-              title="Seleccionar canción del catálogo universal"
-            >
-              {catalog.map((s) => (
-                <option key={s.id} value={s.id}>
-                  🎵 {s.title}
-                </option>
-              ))}
-            </select>
-
-            {/* Botón Importar (.json o .mid) */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#1d2738] border border-gray-600/80 hover:bg-[#25334a] hover:border-amber-400 text-amber-300 font-semibold text-xs shadow-sm transition-all active:scale-95"
-              title="Cargar archivo .mid (MIDI) o .json (Hooktheory) arrastrando o haciendo clic"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              <span>📂 Importar</span>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".mid,.midi,.json"
-              onChange={handleFileInputChange}
-              className="hidden"
-            />
-
-            {/* Botón Pegar desde Hookpad (Ctrl + V) */}
-            <button
-              onClick={handlePasteHookpad}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#16253b] border border-cyan-500/60 hover:bg-[#1e3452] hover:border-cyan-400 text-cyan-300 font-semibold text-xs shadow-sm transition-all active:scale-95"
-              title="Pegar clip copiado desde Hookpad (Ctrl + V / JSON)"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              <span>📋 Pegar (Hookpad)</span>
-            </button>
-          </div>
-
-          <span className="text-gray-400 text-xs font-bold mr-1 uppercase tracking-wider flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-            SECTIONS:
-          </span>
-          {currentSong.sections.map((sec) => {
-            const isSelected = currentSectionId === sec.id;
-            return (
-              <button
-                key={sec.id}
-                onClick={() => setSection(sec.id)}
-                className={`px-3.5 py-1 rounded-md text-xs font-semibold transition-all duration-150 border ${
-                  isSelected
-                    ? 'bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-900/50 scale-[1.02]'
-                    : 'bg-gray-800/80 text-gray-300 border-gray-700 hover:bg-gray-700 hover:text-white'
-                }`}
-              >
-                {sec.name}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Metadatos en la esquina superior derecha */}
-        <div className="flex items-center gap-3 text-xs text-gray-400 font-mono">
-          <span className="text-gray-300 font-semibold">
-            {song.totalBeats} Beats ({totalMeasures} Compases)
-          </span>
-        </div>
-      </div>
+      {/* ── 1. Barra Superior: Pestañas de Secciones Hooktheory ── */}
+      <SectionTabsBar
+        onOpenImport={(json) => {
+          if (json) {
+            setImportModalJson(json);
+            setIsImportModalOpen(true);
+          } else {
+            handleOpenImportWithClipboard();
+          }
+        }}
+        onOpenFileSelect={() => fileInputRef.current?.click()}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".mid,.midi,.json"
+        onChange={handleFileInputChange}
+        className="hidden"
+      />
 
       {/* ── 2. Barra de Herramientas y Controles de Transporte ── */}
       <div className="px-6 py-3">
@@ -356,6 +286,21 @@ export default function TransportBar() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
+            </button>
+
+            {/* 4. Botón Pedal de Sustain / Resonancia */}
+            <button
+              onClick={toggleSustain}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                isSustainActive
+                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                  : "bg-[#161d27] text-gray-400 border border-gray-700/60 hover:text-gray-200"
+              }`}
+              title="Alternar pedal de sustain / resonancia de piano"
+            >
+              <span className="text-sm">𝄽</span>
+              <span>Sustain</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isSustainActive ? "bg-amber-400" : "bg-gray-600"}`} />
             </button>
           </div>
 
@@ -503,6 +448,13 @@ export default function TransportBar() {
           setPendingMidiFile(null);
         }}
         onConfirm={handleMidiModalConfirm}
+      />
+
+      {/* Modal de Importación de Secciones de Hookpad */}
+      <ImportSectionModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        initialJson={importModalJson}
       />
     </div>
   );

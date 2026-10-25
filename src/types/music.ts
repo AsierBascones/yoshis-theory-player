@@ -21,6 +21,12 @@ export interface KeySignature {
   scale: ScaleMode;     // 'major', 'mixolydian', etc.
 }
 
+export interface KeyChange {
+  beat: number;
+  scale: string;
+  tonic: string;
+}
+
 export interface UniversalMelodyNote {
   id: string;
   beat: number;         // Beat de inicio (base 1)
@@ -28,6 +34,18 @@ export interface UniversalMelodyNote {
   sd: string;           // Grado relativo ('1', 'b3', '#4', '7')
   octaveOffset: number; // Desplazamiento de octava (0 = central C5/C4, +1 = aguda, -1 = grave)
 }
+
+export type UniversalNote = UniversalMelodyNote;
+
+export type SectionType =
+  | 'intro'
+  | 'verse'
+  | 'pre-chorus'
+  | 'chorus'
+  | 'bridge'
+  | 'outro'
+  | 'solo'
+  | 'custom';
 
 export interface UniversalChord {
   id: string;
@@ -39,13 +57,22 @@ export interface UniversalChord {
   quality: "maj" | "min" | "dim" | "aug" | "dom7" | "maj7" | "min7" | "halfdim7" | "dim7";
   type: 5 | 7 | 9 | 11 | 13;
   inversion: 0 | 1 | 2 | 3;
-  secondaryType?: "V" | "IV" | "vii°"; // Prefijo secundario
+  secondaryType?: "V" | "IV" | "vii°" | "ii"; // Prefijo secundario
   appliedTarget?: number;              // Grado destino (1-7)
   applied?: string;                    // Grado destino en string
   borrowed?: string;                   // "phrygian", "dorian", "minor", etc.
+  alterations?: string[];              // ["#5", "b5", etc.]
+  adds?: (number | string)[];          // [9, 11, etc.]
+  suspensions?: (number | string)[];   // [2], [4], [2, 4], ["sus2", "sus4"]
+  suspension?: string | number;        // "sus2" | "sus4" | 2 | 4
+  substitutions?: string[];            // ["tri"]
   options?: {
     sus2?: boolean;
     sus4?: boolean;
+    sus2sus4?: boolean;
+    suspensions?: (number | string)[];
+    substitutions?: string[];
+    tri?: boolean;
     add9?: boolean;
     add11?: boolean;
     b5?: boolean;
@@ -66,12 +93,24 @@ export interface UniversalChord {
 export interface SongSection {
   id: string;
   name: string;         // 'Intro', 'Verse', 'Chorus', 'Outro', 'All'
+  type?: SectionType;
+  meter?: { beats: number; beatUnit: number };
+  bpm?: number;
   key: KeySignature;    // Tonalidad local
-  keys?: { beat: number; scale: string; tonic: string }[]; // Modulaciones o cambios de tonalidad
+  keys?: KeyChange[];   // Modulaciones o cambios de tonalidad
   beatsPerBar: number;  // 4
   totalBars: number;
+  totalMeasures?: number;
   melody: UniversalMelodyNote[];
+  notes?: UniversalMelodyNote[];
   chords: UniversalChord[];
+}
+
+export interface SongProject {
+  title: string;
+  artist?: string;
+  activeSectionId: string;
+  sections: SongSection[];
 }
 
 export interface UniversalSong {

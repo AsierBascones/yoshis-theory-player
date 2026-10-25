@@ -4,7 +4,7 @@ import usePlayerStore from '../../store/usePlayerStore';
 import { getColor, getHexAlpha, getDegreeColor } from '../../utils/theoryColors';
 import { seekToBeat, triggerChordNotes } from '../../audio/audioEngine';
 import { pitchToMidi } from '../../utils/theoryParser';
-import { getTransposedChordSymbol } from '../../utils/theoryEngine';
+import { getTransposedChordSymbol, getKeyAtBeat } from '../../utils/theoryEngine';
 import type { ScaleMode } from '../../types/music';
 
 export const HEADER_WIDTH = 58; // px columna izquierda de cabecera
@@ -97,7 +97,8 @@ export default function ChordAnalysisBar() {
               Boolean(chord.roman && (chord.roman.includes('b') || chord.roman.includes('#') || chord.roman.includes('°') || chord.roman.includes('/')));
             const isActive = idx === activeChordIndex;
             const chordNotes = chord.notes ?? [];
-            const displaySymbol = getTransposedChordSymbol(chord, { tonic: currentKey, scale: keyMode as ScaleMode }) || chord.symbol;
+            const chordKey = getKeyAtBeat(song.keys, chord.beat);
+            const displaySymbol = getTransposedChordSymbol(chord, { tonic: chordKey.tonic, scale: chordKey.scale as ScaleMode }) || chord.symbol;
 
             const normalBg = isChordAltered
               ? `repeating-linear-gradient(45deg, ${chordColor}35, ${chordColor}35 6px, rgba(0, 0, 0, 0.55) 6px, rgba(0, 0, 0, 0.55) 12px)`
@@ -127,7 +128,7 @@ export default function ChordAnalysisBar() {
                 >
                   {chord.roman}
                 </span>
-                {chord.sublabel && (
+                {chord.sublabel && !chord.roman?.includes(chord.sublabel) && (
                   <span className="text-[10px] text-gray-300 font-sans font-medium leading-tight">
                     {chord.sublabel}
                   </span>

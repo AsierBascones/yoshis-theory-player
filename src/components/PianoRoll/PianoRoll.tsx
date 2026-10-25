@@ -23,9 +23,10 @@ import {
   applySwingTransform,
   getScaleSpelling,
   formatPitch,
+  transposeNoteLetter,
   type DynamicScaleRow,
 } from '../../utils/musicTheory';
-import { resolveChordVoices, getTransposedChordSymbol } from '../../utils/theoryEngine';
+import { resolveChordVoices, getTransposedChordSymbol, getKeyAtBeat } from '../../utils/theoryEngine';
 import type { ParsedNote } from '../../utils/theoryParser';
 import type { UniversalChord, ResolvedChordVoice, ScaleMode } from '../../types/music';
 
@@ -187,26 +188,35 @@ const MemoizedChordBarBlock = React.memo(function MemoizedChordBarBlock({
   const rootStr = String(chord.rootSd || chord.root || '1');
   const defaultDegreeColor = getDegreeColor(rootStr);
   const chordColor = chord.color || defaultDegreeColor.color;
+  const isBorrowed = Boolean(chord.borrowed);
   const isApplied = Boolean(chord.applied && String(chord.applied) !== '0');
   const isChordAltered =
     Boolean(chord.isAltered) ||
     defaultDegreeColor.isAltered ||
-    Boolean(chord.borrowed) ||
+    isBorrowed ||
     isApplied ||
     rootStr.includes('b') ||
+    rootStr.includes('♭') ||
     rootStr.includes('#') ||
-    Boolean(chord.roman && (chord.roman.includes('b') || chord.roman.includes('#') || chord.roman.includes('°') || chord.roman.includes('/')));
+    Boolean(chord.roman && (chord.roman.includes('b') || chord.roman.includes('♭') || chord.roman.includes('#') || chord.roman.includes('°') || chord.roman.includes('/') || chord.roman.includes('Δ')));
   const displaySymbol = currentKey
     ? getTransposedChordSymbol(chord, { tonic: currentKey, scale: (keyMode || 'major') as ScaleMode }) || chord.customSymbol || chord.symbol
     : chord.customSymbol || chord.symbol;
 
+  // Textura de franjas diagonales de préstamo con acento amarillo/dorado
   const normalBg = isChordAltered
-    ? `repeating-linear-gradient(45deg, ${chordColor}35, ${chordColor}35 6px, rgba(0, 0, 0, 0.55) 6px, rgba(0, 0, 0, 0.55) 12px)`
+    ? isBorrowed
+      ? `repeating-linear-gradient(45deg, rgba(234, 179, 8, 0.35), rgba(234, 179, 8, 0.35) 6px, rgba(0, 0, 0, 0.6) 6px, rgba(0, 0, 0, 0.6) 12px)`
+      : `repeating-linear-gradient(45deg, ${chordColor}35, ${chordColor}35 6px, rgba(0, 0, 0, 0.55) 6px, rgba(0, 0, 0, 0.55) 12px)`
     : chordColor + '22';
 
   const activeBg = isChordAltered
-    ? `repeating-linear-gradient(45deg, ${chordColor}60, ${chordColor}60 6px, rgba(0, 0, 0, 0.4) 6px, rgba(0, 0, 0, 0.4) 12px)`
+    ? isBorrowed
+      ? `repeating-linear-gradient(45deg, rgba(234, 179, 8, 0.65), rgba(234, 179, 8, 0.65) 6px, rgba(0, 0, 0, 0.45) 6px, rgba(0, 0, 0, 0.45) 12px)`
+      : `repeating-linear-gradient(45deg, ${chordColor}60, ${chordColor}60 6px, rgba(0, 0, 0, 0.4) 6px, rgba(0, 0, 0, 0.4) 12px)`
     : getHexAlpha(chordColor, 0.38);
+
+  const borderAccentColor = isBorrowed ? '#EAB308' : chordColor;
 
   return (
     <div
@@ -217,18 +227,18 @@ const MemoizedChordBarBlock = React.memo(function MemoizedChordBarBlock({
         left: `${left}px`,
         width: `${width}px`,
         background: isActive ? activeBg : normalBg,
-        borderTop: `4px solid ${chordColor}`,
-        boxShadow: isActive ? `inset 0 0 12px ${getHexAlpha(chordColor, 0.4)}` : 'none',
+        borderTop: `4px solid ${borderAccentColor}`,
+        boxShadow: isActive ? `inset 0 0 12px ${getHexAlpha(borderAccentColor, 0.4)}` : 'none',
       }}
     >
       <span
         className="text-sm font-serif drop-shadow-sm font-bold tracking-tight leading-tight"
-        style={{ color: chordColor }}
+        style={{ color: isBorrowed ? '#FACC15' : chordColor }}
       >
         {chord.roman}
       </span>
       {chord.sublabel && (
-        <span className="text-[10px] text-gray-300 font-sans font-medium leading-tight">
+        <span className={`text-[10px] font-sans font-medium leading-tight ${isBorrowed ? 'text-amber-300 font-semibold' : 'text-gray-300'}`}>
           {chord.sublabel}
         </span>
       )}
@@ -244,6 +254,7 @@ export default function PianoRoll() {
     song,
     parsedNotes,
     currentBeat,
+    currentSectionId,
     isPlaying,
     activeNotes,
     showMelody,
@@ -314,6 +325,26 @@ export default function PianoRoll() {
     return () => ro.disconnect();
   }, []);
 
+  // Al cambiar de sección, restablecer scroll a 0 y reajustar vista (autoFit)
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollLeft = 0;
+    }
+    setScrollLeft(0);
+
+    if (containerClientWidth > 0 && song.totalBeats > 0) {
+      const availableWidth = containerClientWidth - HEADER_WIDTH;
+      const fitPixels = Math.floor(availableWidth / song.totalBeats);
+      if (fitPixels >= 32 && fitPixels <= 64) {
+        setPixelsPerBeat(fitPixels);
+      } else if (fitPixels > 64) {
+        setPixelsPerBeat(48);
+      } else {
+        setPixelsPerBeat(40);
+      }
+    }
+  }, [currentSectionId, song.id, containerClientWidth, song.totalBeats, setPixelsPerBeat]);
+
   // ── Cálculo dinámico de octavas visibles según verticalRange ──
   const { bottomOctave, topOctave } = useMemo(() => {
     if (verticalRange === 'c4-c6') {
@@ -336,10 +367,24 @@ export default function PianoRoll() {
     };
   }, [verticalRange, parsedNotes, song.chords]);
 
-  // Filas diatónicas recalculadas según tonalidad y octavas
+  // Tonalidad y modo activos en el tiempo actual (soporta modulaciones en línea de tiempo)
+  const activeKeyAtBeat = useMemo(() => {
+    return getKeyAtBeat(song.keys, currentBeat);
+  }, [song.keys, currentBeat]);
+
+  const effectiveKey = useMemo(() => {
+    if (semitoneOffset !== 0) {
+      return transposeNoteLetter(activeKeyAtBeat.tonic, semitoneOffset, currentKey);
+    }
+    return activeKeyAtBeat.tonic;
+  }, [activeKeyAtBeat.tonic, semitoneOffset, currentKey]);
+
+  const effectiveMode = activeKeyAtBeat.scale;
+
+  // Filas diatónicas recalculadas según la escala activa en el pulso actual y octavas
   const scaleRows: DynamicScaleRow[] = useMemo(
-    () => generateScaleRows(currentKey, keyMode, semitoneOffset, bottomOctave, topOctave),
-    [currentKey, keyMode, semitoneOffset, bottomOctave, topOctave]
+    () => generateScaleRows(effectiveKey, effectiveMode, semitoneOffset, bottomOctave, topOctave),
+    [effectiveKey, effectiveMode, semitoneOffset, bottomOctave, topOctave]
   );
 
   const computedRowHeight = useMemo(() => {
@@ -504,7 +549,7 @@ export default function PianoRoll() {
     return idx;
   }, [currentBeat, song.chords]);
 
-  const activeChord = activeChordIndex !== -1 ? song.chords[activeChordIndex] : song.chords[0];
+  const activeChord = activeChordIndex !== -1 ? song.chords[activeChordIndex] : null;
 
   const handleChordClick = useCallback(
     async (chordNotes: string[] | undefined, chordBeat: number) => {
@@ -732,6 +777,23 @@ export default function PianoRoll() {
                   </div>
                 );
               })}
+
+              {/* Insignias / etiquetas flotantes doradas/ámbar de modulación estilo Hookpad */}
+              {song.keys && song.keys.map((k, kIdx) => {
+                const left = (k.beat - 1) * pixelsPerBeat;
+                const scaleName = k.scale ? k.scale.charAt(0).toUpperCase() + k.scale.slice(1) : 'Major';
+                return (
+                  <div
+                    key={`key-mod-badge-${kIdx}-${k.beat}`}
+                    className="absolute top-1 z-30 flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 text-amber-950 border border-amber-300 shadow-[0_2px_8px_rgba(245,158,11,0.5)] font-sans text-[10px] font-bold tracking-wide pointer-events-none whitespace-nowrap select-none"
+                    style={{ left: `${left + 2}px` }}
+                    title={`Modulación a ${k.tonic} ${scaleName} (Beat ${k.beat})`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-950 animate-pulse" />
+                    <span>{k.tonic} {scaleName}</span>
+                  </div>
+                );
+              })}
             </div>
 
             {/* ── 2. Rejilla de Notas Virtualizada (ocupa el espacio flexible central) ── */}
@@ -787,6 +849,15 @@ export default function PianoRoll() {
                     />
                   );
                 })}
+
+                {/* Líneas verticales divisorias doradas/ámbar en los puntos de modulación */}
+                {song.keys && song.keys.map((k, kIdx) => (
+                  <div
+                    key={`key-mod-grid-line-${kIdx}-${k.beat}`}
+                    className="absolute top-0 bottom-0 pointer-events-none z-10 border-l-2 border-dashed border-amber-400/60"
+                    style={{ left: (k.beat - 1) * pixelsPerBeat }}
+                  />
+                ))}
 
                 {/* Bandas de fondo por acorde VIRTUALIZADAS */}
                 {visibleChords.map((chord, i) => {
@@ -896,6 +967,7 @@ export default function PianoRoll() {
               >
                 {visibleChords.map((chord, idx) => {
                   const isActive = activeChord === chord;
+                  const chordKey = getKeyAtBeat(song.keys, chord.beat);
                   return (
                     <MemoizedChordBarBlock
                       key={`chord-bar-${(chord as any).id || chord.beat || idx}`}
@@ -903,8 +975,8 @@ export default function PianoRoll() {
                       pixelsPerBeat={pixelsPerBeat}
                       isActive={isActive}
                       onClick={handleChordClick}
-                      currentKey={currentKey}
-                      keyMode={keyMode}
+                      currentKey={chordKey.tonic}
+                      keyMode={chordKey.scale}
                     />
                   );
                 })}

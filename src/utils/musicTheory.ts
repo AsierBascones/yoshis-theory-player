@@ -102,6 +102,17 @@ export const SCALE_MODES: Record<string, ScaleModeDef> = {
   }
 };
 
+SCALE_MODES['dor'] = SCALE_MODES['dorian'];
+SCALE_MODES['mix'] = SCALE_MODES['mixolydian'];
+SCALE_MODES['min'] = SCALE_MODES['minor'];
+SCALE_MODES['maj'] = SCALE_MODES['major'];
+SCALE_MODES['phr'] = SCALE_MODES['phrygian'];
+SCALE_MODES['lyd'] = SCALE_MODES['lydian'];
+SCALE_MODES['loc'] = SCALE_MODES['locrian'];
+SCALE_MODES['harmonicminor'] = SCALE_MODES['harmonic_minor'];
+SCALE_MODES['harm_min'] = SCALE_MODES['harmonic_minor'];
+SCALE_MODES['harm'] = SCALE_MODES['harmonic_minor'];
+
 const LETTER_NAMES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 const NATURAL_PC: Record<string, number> = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };
 const MAJOR_INTERVALS = [0, 2, 4, 5, 7, 9, 11];

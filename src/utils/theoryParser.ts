@@ -26,9 +26,18 @@ export interface RawChord {
   root: string | number;
   type?: number;
   applied?: string | number;
+  appliedTarget?: number;
+  secondaryType?: "V" | "IV" | "vii°" | "ii" | string;
   borrowed?: string;
   isAltered?: boolean;
   inversion?: number;
+  alterations?: string[];
+  adds?: (number | string)[];
+  suspensions?: (number | string)[];
+  suspension?: string | number;
+  substitutions?: string[];
+  options?: any;
+  rootSd?: string;
   color?: string;
   notes?: string[];
   rootMidi?: number;

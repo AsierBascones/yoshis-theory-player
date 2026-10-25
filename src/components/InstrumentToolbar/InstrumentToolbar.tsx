@@ -15,6 +15,8 @@ export default function InstrumentToolbar() {
     chordsOctaveShift,
     shiftMelodyOctave,
     shiftChordsOctave,
+    isSustainActive,
+    toggleSustain,
   } = usePlayerStore();
 
   return (
@@ -50,6 +52,21 @@ export default function InstrumentToolbar() {
             <span>🎸</span> Guitar
           </button>
         </div>
+
+        {/* Botón Pedal de Sustain / Resonancia */}
+        <button
+          onClick={toggleSustain}
+          className={`px-2.5 py-1 rounded text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            isSustainActive
+              ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+              : "bg-[#161d27] text-gray-400 border border-gray-700/60 hover:text-gray-200"
+          }`}
+          title="Alternar pedal de sustain / resonancia de piano"
+        >
+          <span className="text-sm">𝄽</span>
+          <span>Sustain</span>
+          <span className={`w-1.5 h-1.5 rounded-full ${isSustainActive ? "bg-amber-400" : "bg-gray-600"}`} />
+        </button>
       </div>
 
       {/* Lado derecho: Ajuste de Octavas (±8va) y SHOW Melody / Chords */}
