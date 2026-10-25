@@ -7,7 +7,7 @@
 
 import { Midi } from '@tonejs/midi';
 import type { UniversalSong, UniversalMelodyNote, UniversalChord, ScaleMode } from '../types/music';
-import { NOTE_TO_PC } from './theoryEngine';
+import { NOTE_TO_PC, parseHookpadChord } from './theoryEngine';
 
 export interface MidiTrackInfo {
   index: number;
@@ -273,24 +273,26 @@ export async function parseMidiToUniversalSong(
       const roman = getRomanNumeral(rootSd, quality);
       lastChord = { rootSd, quality, roman };
 
-      chords.push({
+      chords.push(parseHookpadChord({
         id: `c_${startBeat}`,
         beat: startBeat,
         duration: step,
         roman,
-        rootSd,
+        root: rootSd,
         quality,
-      });
+        type: quality.includes('7') ? 7 : 5,
+      }, keyTonic, keyScale));
     } else {
       // Si el compás o medio compás no tuvo notas de acompañamiento, mantener el acorde anterior
-      chords.push({
+      chords.push(parseHookpadChord({
         id: `c_${startBeat}`,
         beat: startBeat,
         duration: step,
         roman: lastChord.roman,
-        rootSd: lastChord.rootSd,
+        root: lastChord.rootSd,
         quality: lastChord.quality,
-      });
+        type: lastChord.quality.includes('7') ? 7 : 5,
+      }, keyTonic, keyScale));
     }
   }
 
@@ -304,14 +306,15 @@ export async function parseMidiToUniversalSong(
     ];
     for (let bar = 0; bar < totalBars; bar++) {
       const stepProg = progression[bar % progression.length];
-      chords.push({
+      chords.push(parseHookpadChord({
         id: `c_auto_${bar}`,
         beat: bar * beatsPerBar + 1,
         duration: beatsPerBar,
         roman: stepProg.roman,
-        rootSd: stepProg.rootSd,
+        root: stepProg.rootSd,
         quality: stepProg.quality,
-      });
+        type: stepProg.quality.includes('7') ? 7 : 5,
+      }, keyTonic, keyScale));
     }
   }
 

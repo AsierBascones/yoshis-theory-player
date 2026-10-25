@@ -622,7 +622,7 @@ export function resolveChordVoicing(
   }
 
   const intervals = CHORD_INTERVALS[chord.quality] || CHORD_INTERVALS['maj'];
-  const count = chord.quality.includes('7') ? 4 : 3;
+  const count = (chord.type === 7 || chord.quality.includes('7')) ? 4 : 3;
   const chordIntervals = intervals.slice(0, count);
 
   const bassInterval = intervals[inv % intervals.length] || 0;
@@ -683,7 +683,7 @@ export function resolveChordVoicing(
     return SEMI_TO_SD[semi] || '1';
   }
 
-  const voices: ResolvedChordVoice[] = uniqueMidis.map((m, idx) => {
+  const harmonicVoices: ResolvedChordVoice[] = uniqueMidis.map((m) => {
     const pc = ((m % 12) + 12) % 12;
     const sd = getDegreeSd(pc);
     const { color, isAltered } = getDegreeColor(sd);
@@ -696,24 +696,45 @@ export function resolveChordVoicing(
     else if (intervalFromRoot === 6 || intervalFromRoot === 7 || intervalFromRoot === 8) voiceNumber = '5';
     else if (intervalFromRoot >= 9 && intervalFromRoot <= 11) voiceNumber = '7';
 
-    const isBass = idx === 0;
-    const label = (inv > 0 && isBass) ? 'Bass' : voiceNumber;
-
     return {
       midi: m,
       pitch,
-      label,
+      label: voiceNumber,
       noteLabel,
       sd,
       color,
       isAltered,
-      isBass,
+      isBass: false,
       voiceNumber,
     };
   });
 
+  let voices: ResolvedChordVoice[] = harmonicVoices;
+  let allSoundingMidis: number[] = [...uniqueMidis];
+
+  // Si tiene inversión (ej. I⁶ sobre C/E), agregar la voz del bajo en octava grave (E3)
+  if (inv > 0) {
+    const bassMidi = rootMidiBase + bassInterval - 12 + octaveShift;
+    const bassPitch = midiToPitch(bassMidi);
+    const bassSd = getDegreeSd(bassPc);
+    const { color: bassColor, isAltered: bassAltered } = getDegreeColor(bassSd);
+    const bassVoice: ResolvedChordVoice = {
+      midi: bassMidi,
+      pitch: bassPitch,
+      label: 'Bass',
+      noteLabel: bassName,
+      sd: bassSd,
+      color: bassColor,
+      isAltered: bassAltered,
+      isBass: true,
+      voiceNumber: 'Bass',
+    };
+    voices = [bassVoice, ...harmonicVoices];
+    allSoundingMidis = [bassMidi, ...uniqueMidis];
+  }
+
   const notes = voices.map((v) => v.pitch);
-  const midiNotes = voices.map((v) => v.midi);
+  const midiNotes = allSoundingMidis;
 
   const rootDegreeSd = getDegreeSd(rootPc);
   const { color: chordColor, isAltered: rootAltered } = getDegreeColor(rootDegreeSd);
@@ -724,7 +745,7 @@ export function resolveChordVoicing(
     duration: chord.duration,
     roman: chord.roman,
     symbol: chord.customSymbol || symbol,
-    rootMidi: midis[0],
+    rootMidi: allSoundingMidis[0],
     voices,
     midiNotes,
     notes,

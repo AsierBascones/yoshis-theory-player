@@ -5,7 +5,7 @@
  */
 
 import type { UniversalSong, UniversalMelodyNote, UniversalChord, ScaleMode } from '../types/music';
-import { parseHooktheoryChord } from './theoryEngine';
+import { parseHookpadChord } from './theoryEngine';
 
 export function isHookpadJson(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
@@ -65,17 +65,18 @@ export function parseHookpadJson(text: string, defaultBpm?: number): UniversalSo
     });
   });
 
-  // 2. Mapeo de acordes relativos con parseHooktheoryChord estricto
+  // 2. Mapeo de acordes relativos con parseHookpadChord estricto
   const rawChords: any[] = Array.isArray(data.chords) ? data.chords : [];
   const chords: UniversalChord[] = rawChords.map((c, idx) => {
-    return parseHooktheoryChord(
+    return parseHookpadChord(
       {
         ...c,
         id: c.id || `hp_c_${idx}_${c.beat ?? (idx * beatsPerBar + 1)}`,
         beat: typeof c.beat === 'number' ? c.beat : (idx * beatsPerBar + 1),
         duration: typeof c.duration === 'number' ? c.duration : beatsPerBar,
       },
-      keyTonic
+      keyTonic,
+      keyScale
     );
   });
 
