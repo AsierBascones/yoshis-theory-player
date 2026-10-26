@@ -80,6 +80,8 @@ export type SectionType =
   | 'solo'
   | 'custom';
 
+export type PitchClass = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
+
 export type ChordQuality =
   | 'maj'
   | 'min'
@@ -145,6 +147,14 @@ export interface CanonicalChordIR {
     readonly targetPitchClass?: number;      // 0..11
     readonly isTritoneSub: boolean;          // Sustitución tritonal
     readonly borrowedMode?: string;          // Modo de préstamo ("minor", "phrygian", etc.)
+    readonly borrowed?: {
+      readonly isBorrowed: boolean;
+      readonly provenance: 'explicit' | 'inferred' | 'none';
+      readonly mode: string | null;
+      readonly candidateModes: string[];
+      readonly isAmbiguous: boolean;
+      readonly explanation?: string;
+    };
   };
 
   // 5. Colección completa de factores armónicos teóricos
@@ -157,6 +167,10 @@ export interface CanonicalChordIR {
     readonly bassPitchClass: number;     // 0..11
     readonly bassName: string;           // "C", "E", "Bb", "F#"
     readonly isAmbiguous: boolean;       // Si la nota de la inversión estaba omitida
+    readonly bassDegreeIndex?: number;    // Grado diatónico del bajo respecto a la tónica (1..7)
+    readonly bassScaleDegree?: string;    // Grado relativo con alteración (ej. "1", "3", "b3", "5", "b7")
+    readonly bassAlteration?: number;     // -1 (b), 0 (natural), +1 (#)
+    readonly bassIntervalFromRoot?: number; // Semitonos reales desde la fundamental (0, 3, 4, 7, etc.)
   };
 
   // 7. Salidas resueltas para presentación y síntesis
@@ -166,12 +180,66 @@ export interface CanonicalChordIR {
     readonly romanNumeral: string;       // "I⁶", "vii°⁷/ii", "bIII⁷", "V⁷/V"
     readonly chordSymbol: string;        // "C/E", "A#°7", "Eb7", "G7"
     readonly sublabel: string;           // "(phr)", "(m)", "(Δ-sub)", ""
+    readonly bassColor?: string;         // Color derivado del bajo efectivo
     readonly functionalLabels: Array<{   // Etiquetas deterministas para PianoRoll
       readonly midi: number;
       readonly label: string;            // '1', '3', '5', 'b7', 'b9', 'Bass'
       readonly voiceNumber: string;
     }>;
   };
+}
+
+export type MelodicRole =
+  | 'root'
+  | 'chord_tone'
+  | 'extension'
+  | 'scale_tone'
+  | 'passing_tone'
+  | 'neighbor_tone'
+  | 'suspension'
+  | 'anticipation'
+  | 'appoggiatura'
+  | 'escape_tone'
+  | 'chromatic';
+
+export type MetricAccent = 'strong' | 'medium' | 'weak';
+
+export type PerceptualStabilityCategory =
+  | 'very_stable'
+  | 'stable'
+  | 'colored_stable'
+  | 'ornamental_stable'
+  | 'tense_unresolved'
+  | 'dissonant';
+
+export interface MelodicStabilityContext {
+  readonly prevNoteMidi?: number;
+  readonly nextNoteMidi?: number;
+  readonly beat?: number;
+  readonly duration?: number;
+  readonly timeSignature?: [number, number];
+}
+
+export interface MelodicStabilityResult {
+  readonly pitchClass: number;
+  readonly isChordTone: boolean;                    // Pertenencia estricta: pc in PitchClasses(C)
+  readonly role: MelodicRole;                       // Función melódica analizada
+  readonly metricAccent: MetricAccent;              // Acento métrico: fuerte, medio, débil
+  readonly perceptualStability: PerceptualStabilityCategory; // Estabilidad perceptiva
+  readonly stabilityScore: number;                  // 0.0 (máxima tensión) a 1.0 (máxima estabilidad)
+  readonly distanceToNearestChordTone: number;       // Semitonos hasta la nota de acorde más cercana
+  readonly intervalFromRoot: number;                // Semitonos desde la fundamental (0..11)
+  readonly resolvesByStep: boolean;                 // Si resuelve por paso conjunto (1 o 2 semitonos)
+  readonly label: string;                           // Descripción legible (ej. "Root", "3rd", "Passing Tone")
+}
+
+export interface ModalMixtureResult {
+  readonly isBorrowed: boolean;
+  readonly provenance: 'explicit' | 'inferred' | 'none';
+  readonly borrowedMode: string | null;
+  readonly candidateModes: string[];
+  readonly isAmbiguous: boolean;
+  readonly explanation: string;
 }
 
 export interface IntermediateChordModel {
@@ -203,11 +271,17 @@ export interface IntermediateChordModel {
   bassTone: ChordTone;            // Voz resuelta para el bajo (o adaptada deterministamente si es ambigua)
   bassName: string;               // Nombre enarmónico del bajo
   isAmbiguousInversion: boolean;  // Flag si la inversión original carece de voz (ej. inv 1 con no3)
+  bassDegreeIndex?: number;       // Grado diatónico del bajo respecto a la tónica (1..7)
+  bassScaleDegree?: string;       // Grado relativo del bajo con alteración (ej. "1", "3", "b3", "5")
+  bassAlteration?: number;        // Alteración cromática del bajo (-1, 0, +1)
+  bassIntervalFromRoot?: number;  // Intervalo en semitonos del bajo desde la fundamental
+  bassColor?: string;             // Color representativo del bajo efectivo
 
   // Metadatos para formateadores
   chordQuality: ChordQuality;
   type: 5 | 7 | 9 | 11 | 13;
   borrowedMode: string | null;
+  modalMixture?: ModalMixtureResult;
   useFlats?: boolean;
   omits: number[];
   suspensions: number[];
@@ -263,6 +337,9 @@ export interface UniversalChord {
   };
   notes: string[];      // Frecuencias exactas ["F#4", "A4", "C5"]
   bassNote: string;     // Nota que ejerce de bajo real según la inversión
+  bassDegreeIndex?: number; // 1..7 (grado diatónico del bajo respecto a la tónica)
+  bassScaleDegree?: string; // Grado con alteración relativa (ej. "1", "3", "b3", "5", "b7")
+  bassColor?: string;       // Color derivado del bajo efectivo
   midiNotes?: number[];
   voices?: ResolvedChordVoice[];
   sublabel?: string;

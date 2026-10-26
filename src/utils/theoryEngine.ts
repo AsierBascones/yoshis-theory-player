@@ -22,8 +22,30 @@ import type {
   IntermediateChordModel,
   CanonicalChordIR,
   ScaleMode,
+  ChordQuality,
+  PitchClass,
+  MelodicRole,
+  MetricAccent,
+  PerceptualStabilityCategory,
+  MelodicStabilityContext,
+  MelodicStabilityResult,
+  ModalMixtureResult,
 } from '../types/music';
-export type { KeyChange, ChordTone, AppliedFunction, IntermediateChordModel, CanonicalChordIR };
+export type {
+  KeyChange,
+  ChordTone,
+  AppliedFunction,
+  IntermediateChordModel,
+  CanonicalChordIR,
+  ChordQuality,
+  PitchClass,
+  MelodicRole,
+  MetricAccent,
+  PerceptualStabilityCategory,
+  MelodicStabilityContext,
+  MelodicStabilityResult,
+  ModalMixtureResult,
+};
 import { getDegreeColor } from './theoryColors';
 
 // ── Re-exports de utilidades comunes para compatibilidad ──
@@ -288,6 +310,475 @@ DIATONIC_7TH_QUALITIES_BY_MODE.loc = DIATONIC_7TH_QUALITIES_BY_MODE.locrian;
 DIATONIC_7TH_QUALITIES_BY_MODE.harmonicminor = DIATONIC_7TH_QUALITIES_BY_MODE.harmonic_minor;
 DIATONIC_7TH_QUALITIES_BY_MODE.harm_min = DIATONIC_7TH_QUALITIES_BY_MODE.harmonic_minor;
 DIATONIC_7TH_QUALITIES_BY_MODE.harm = DIATONIC_7TH_QUALITIES_BY_MODE.harmonic_minor;
+
+/**
+ * REQ-1.1: Obtiene la clase de altura en Z12 [0..11] a partir de nombre de nota o número MIDI.
+ */
+export function getPitchClass(noteOrMidi: string | number): number {
+  if (typeof noteOrMidi === "number") {
+    return normalizeSemitone(noteOrMidi);
+  }
+  const clean = String(noteOrMidi).trim();
+  const match = clean.match(/^([A-Ga-g][#b]?)/);
+  if (match) {
+    const key = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+    if (NOTE_TO_PC[key] !== undefined) return NOTE_TO_PC[key];
+    if (NOTE_TO_PC[match[1]] !== undefined) return NOTE_TO_PC[match[1]];
+  }
+  return NOTE_TO_PC[clean] ?? 0;
+}
+
+/**
+ * REQ-2.2: Calcula ordenadamente las clases de altura de los 7 grados de una escala o modo:
+ * Scale(T, M) = {(T + o_i) mod 12 | o_i in M}
+ */
+export function getScalePitchClasses(
+  tonic: string | number,
+  mode: string = "major"
+): number[] {
+  const tonicPc = typeof tonic === "number" ? normalizeSemitone(tonic) : getPitchClass(tonic);
+  const normMode = mode.toLowerCase();
+  const offsets = SCALE_MODE_OFFSETS[normMode] ?? SCALE_MODE_OFFSETS["major"];
+  return offsets.map(o => normalizeSemitone(tonicPc + o));
+}
+
+/**
+ * REQ-1.3 & REQ-3.2/3.3: Obtiene los intervalos reales en semitonos para cualquier cualidad armónica.
+ */
+export function getChordIntervals(quality: ChordQuality | string): number[] {
+  return CHORD_INTERVALS[quality] ? [...CHORD_INTERVALS[quality]] : [0, 4, 7];
+}
+
+/**
+ * REQ-5.1: Determina la cualidad diatónica de tríada o tétrada para cualquier grado (1..7) y modo.
+ */
+export function getDiatonicChordQuality(
+  degree: number,
+  mode: string = "major",
+  is7th: boolean = false
+): ChordQuality {
+  const normMode = mode.toLowerCase();
+  const deg = Math.max(1, Math.min(7, Math.round(degree)));
+  if (is7th) {
+    return (DIATONIC_7TH_QUALITIES_BY_MODE[normMode]?.[deg] as ChordQuality) ?? "maj7";
+  }
+  return (DIATONIC_DEGREES_BY_SCALE[normMode]?.[deg]?.quality as ChordQuality) ?? "maj";
+}
+
+/**
+ * REQ-2.3: Obtiene la clase de altura (0..11) correspondiente a un grado relativo (ej. 1, 3, "b3", "#4")
+ * dado el contexto tonal (tónica y modo).
+ */
+export function getDegreePitchClass(
+  degree: number | string,
+  tonic: string | number,
+  mode: string = "major"
+): number {
+  const tonicPc = typeof tonic === "number" ? normalizeSemitone(tonic) : getPitchClass(tonic);
+  const normMode = mode.toLowerCase();
+  const modeOffsets = SCALE_MODE_OFFSETS[normMode] ?? SCALE_MODE_OFFSETS["major"];
+
+  const degStr = String(degree).trim();
+  const baseNum = parseInt(degStr.replace(/[^0-9]/g, ""), 10) || 1;
+  const clampedNum = Math.max(1, Math.min(7, baseNum));
+  const baseOffset = modeOffsets[clampedNum - 1] ?? 0;
+
+  let accidental = 0;
+  if (degStr.includes("#") || degStr.includes("♯")) {
+    accidental = (degStr.match(/[#♯]/g) || []).length;
+  } else if (degStr.includes("b") || degStr.includes("♭")) {
+    accidental = -(degStr.match(/[b♭]/g) || []).length;
+  }
+
+  return normalizeSemitone(tonicPc + baseOffset + accidental);
+}
+
+/**
+ * REQ-6.1: Pertenencia al acorde activo:
+ * ChordMember(p, C) <=> pc(p) in PitchClasses(C)
+ */
+export function isChordTone(
+  pitchOrMidi: number | string,
+  chord: CanonicalChordIR | IntermediateChordModel | UniversalChord
+): boolean {
+  const pc = getPitchClass(pitchOrMidi);
+  let pitches: number[] = [];
+  if ('outputs' in chord && chord.outputs?.effectivePitches) {
+    pitches = chord.outputs.effectivePitches;
+  } else if ('effectivePitches' in chord && Array.isArray((chord as any).effectivePitches)) {
+    pitches = (chord as any).effectivePitches;
+  } else if ('midiNotes' in chord && Array.isArray(chord.midiNotes)) {
+    pitches = chord.midiNotes.map(m => normalizeSemitone(m));
+  } else if ('notes' in chord && Array.isArray(chord.notes)) {
+    pitches = chord.notes.map(n => getPitchClass(n));
+  }
+  return pitches.includes(pc);
+}
+
+/**
+ * REQ-6.2: Clasificación contextual de estabilidad melódica:
+ * Evalúa si una nota melódica es tónica del acorde, factor estructural, extensión,
+ * nota de escala o tensión cromática, y calcula la distancia a la nota armónica más cercana.
+ */
+/**
+ * REQ-7.1 / REQ-6.2: Clasificación de acento métrico según la métrica del compás:
+ * - 'strong': downbeat (tiempo 1 del compás)
+ * - 'medium': acento secundario (ej. tiempo 3 en 4/4, tiempo 2 compuesto en 6/8)
+ * - 'weak': tiempos débiles o subdivisiones
+ */
+export function getMetricAccent(
+  beat: number = 1,
+  timeSignature: [number, number] = [4, 4]
+): MetricAccent {
+  const [num, den] = timeSignature;
+  const quarterBeatsPerBar = (num * 4) / den;
+  const offsetInBar = ((beat - 1) % quarterBeatsPerBar + quarterBeatsPerBar) % quarterBeatsPerBar;
+  const EPS = 0.05;
+
+  if (offsetInBar < EPS || Math.abs(offsetInBar - quarterBeatsPerBar) < EPS) {
+    return 'strong';
+  }
+
+  if (num === 4 && den === 4) {
+    if (Math.abs(offsetInBar - 2.0) < EPS) {
+      return 'medium';
+    }
+  } else if (num === 6 && den === 8) {
+    if (Math.abs(offsetInBar - 1.5) < EPS) {
+      return 'medium';
+    }
+  } else if (num === 12 && den === 8) {
+    if (Math.abs(offsetInBar - 3.0) < EPS) {
+      return 'medium';
+    }
+  }
+
+  return 'weak';
+}
+
+function parsePitchToMidi(pitch: string): number {
+  const match = pitch.trim().match(/^([A-Ga-g][#b]?)(\d+)$/);
+  if (match) {
+    const key = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+    const pc = NOTE_TO_PC[key] ?? 0;
+    const oct = parseInt(match[2], 10);
+    return (oct + 1) * 12 + pc;
+  }
+  const cleanKey = pitch.trim().charAt(0).toUpperCase() + pitch.trim().slice(1).toLowerCase();
+  const pc = NOTE_TO_PC[cleanKey] ?? 0;
+  return 60 + pc; // Octava 4 por defecto
+}
+
+/**
+ * REQ-6.1 & REQ-6.2: Evaluación y clasificación contextual de estabilidad melódica.
+ * Distingue explícitamente entre:
+ * 1. Pertenencia al acorde (ChordMember): propiedad matemática binaria pc in PitchClasses(C).
+ * 2. Estabilidad perceptiva: interacción entre función melódica, peso métrico y resolución por paso conjunto.
+ * Identifica notas de paso (passing tones), bordaduras (neighbor tones), suspensiones, anticipaciones,
+ * apoyaturas y notas de escape (échappées).
+ */
+export function getMelodicStability(
+  pitchOrMidi: number | string,
+  chord: CanonicalChordIR | IntermediateChordModel | UniversalChord,
+  scaleMode: string = 'major',
+  context?: MelodicStabilityContext
+): MelodicStabilityResult {
+  const currentMidi = typeof pitchOrMidi === 'number' ? pitchOrMidi : parsePitchToMidi(pitchOrMidi);
+  const pc = getPitchClass(pitchOrMidi);
+  const isTone = isChordTone(pc, chord);
+
+  let rootPc = 0;
+  if ('identity' in chord && chord.identity?.rootPitchClass !== undefined) {
+    rootPc = chord.identity.rootPitchClass;
+  } else if ('rootSemitones' in chord && typeof (chord as any).rootSemitones === 'number') {
+    rootPc = (chord as any).rootSemitones;
+  } else if ('_rootSemitones' in chord && typeof (chord as any)._rootSemitones === 'number') {
+    rootPc = (chord as any)._rootSemitones;
+  }
+
+  const intervalFromRoot = normalizeSemitone(pc - rootPc);
+
+  let effectivePitches: number[] = [];
+  if ('outputs' in chord && chord.outputs?.effectivePitches) {
+    effectivePitches = chord.outputs.effectivePitches;
+  } else if ('ir' in chord && chord.ir?.outputs?.effectivePitches) {
+    effectivePitches = chord.ir.outputs.effectivePitches;
+  } else if ('model' in chord && chord.model?.effectivePitches) {
+    effectivePitches = chord.model.effectivePitches;
+  } else if ('effectivePitches' in chord && Array.isArray((chord as any).effectivePitches)) {
+    effectivePitches = (chord as any).effectivePitches;
+  } else if ('midiNotes' in chord && Array.isArray(chord.midiNotes)) {
+    effectivePitches = Array.from(new Set(chord.midiNotes.map(m => normalizeSemitone(m))));
+  } else if ('notes' in chord && Array.isArray(chord.notes)) {
+    effectivePitches = Array.from(new Set(chord.notes.map(n => getPitchClass(n))));
+  }
+
+  let distanceToNearest = 0;
+  if (!isTone && effectivePitches.length > 0) {
+    distanceToNearest = Math.min(
+      ...effectivePitches.map(cpc => {
+        const diff = Math.abs(pc - cpc);
+        return Math.min(diff, 12 - diff);
+      })
+    );
+  }
+
+  const metricAccent = getMetricAccent(context?.beat ?? 1, context?.timeSignature ?? [4, 4]);
+
+  const prevMidi = context?.prevNoteMidi;
+  const nextMidi = context?.nextNoteMidi;
+  const hasNeighbors = prevMidi !== undefined && nextMidi !== undefined;
+
+  let resolvesByStep = false;
+  if (nextMidi !== undefined) {
+    const diffNext = Math.abs(nextMidi - currentMidi);
+    const nextIsChordTone = isChordTone(nextMidi, chord);
+    resolvesByStep = (diffNext === 1 || diffNext === 2) && nextIsChordTone;
+  }
+
+  let role: MelodicRole = 'chromatic';
+  let perceptualStability: PerceptualStabilityCategory = 'dissonant';
+  let stabilityScore = 0.1;
+  let label = '';
+
+  if (pc === rootPc) {
+    role = 'root';
+    label = 'Root';
+    perceptualStability = metricAccent === 'strong' ? 'very_stable' : 'stable';
+    stabilityScore = metricAccent === 'strong' ? 1.0 : 0.9;
+  } else if (isTone) {
+    role = 'chord_tone';
+    label = intervalFromRoot === 3 || intervalFromRoot === 4 ? '3rd' :
+            intervalFromRoot === 6 || intervalFromRoot === 7 || intervalFromRoot === 8 ? '5th' :
+            intervalFromRoot === 9 || intervalFromRoot === 10 || intervalFromRoot === 11 ? '7th' : 'Chord Tone';
+    perceptualStability = metricAccent === 'strong' ? 'very_stable' : 'stable';
+    stabilityScore = metricAccent === 'strong' ? 0.9 : 0.85;
+  } else {
+    // ── Clasificación Contextual de Notas No Armónicas (Non-Harmonic Tones) ──
+    if (hasNeighbors && prevMidi !== undefined && nextMidi !== undefined) {
+      const diffPrev = Math.abs(currentMidi - prevMidi);
+      const diffNext = Math.abs(nextMidi - currentMidi);
+      const isStepFromPrev = diffPrev === 1 || diffPrev === 2;
+      const isStepToNext = diffNext === 1 || diffNext === 2;
+      const nextIsChordTone = isChordTone(nextMidi, chord);
+      const prevIsChordTone = isChordTone(prevMidi, chord);
+
+      const isDirectionSame = (currentMidi - prevMidi) * (nextMidi - currentMidi) > 0;
+      const isReturnToSame = normalizeSemitone(prevMidi) === normalizeSemitone(nextMidi);
+
+      if (isStepFromPrev && isStepToNext && isDirectionSame && nextIsChordTone) {
+        // 1. Nota de Paso (Passing Tone)
+        role = 'passing_tone';
+        label = metricAccent === 'weak' ? 'Unaccented Passing Tone' : 'Accented Passing Tone';
+        perceptualStability = metricAccent === 'weak' ? 'ornamental_stable' : 'tense_unresolved';
+        stabilityScore = metricAccent === 'weak' ? 0.65 : 0.45;
+      } else if (isStepFromPrev && isStepToNext && isReturnToSame && nextIsChordTone) {
+        // 2. Bordadura (Neighbor Tone)
+        role = 'neighbor_tone';
+        label = currentMidi > prevMidi ? 'Upper Neighbor Tone' : 'Lower Neighbor Tone';
+        perceptualStability = metricAccent === 'weak' ? 'ornamental_stable' : 'tense_unresolved';
+        stabilityScore = metricAccent === 'weak' ? 0.65 : 0.45;
+      } else if (normalizeSemitone(prevMidi) === pc && nextMidi < currentMidi && isStepToNext && nextIsChordTone && metricAccent !== 'weak') {
+        // 3. Suspensión (Suspension)
+        role = 'suspension';
+        label = 'Suspension';
+        perceptualStability = 'tense_unresolved';
+        stabilityScore = 0.4;
+      } else if (isStepFromPrev && normalizeSemitone(nextMidi) === pc && metricAccent === 'weak') {
+        // 4. Anticipación (Anticipation)
+        role = 'anticipation';
+        label = 'Anticipation';
+        perceptualStability = 'ornamental_stable';
+        stabilityScore = 0.6;
+      } else if (diffPrev >= 3 && isStepToNext && nextIsChordTone && metricAccent !== 'weak') {
+        // 5. Apoyatura (Appoggiatura)
+        role = 'appoggiatura';
+        label = 'Appoggiatura';
+        perceptualStability = 'tense_unresolved';
+        stabilityScore = 0.35;
+      } else if (isStepFromPrev && prevIsChordTone && diffNext >= 3 && ((nextMidi - currentMidi) * (currentMidi - prevMidi) < 0)) {
+        // 6. Nota de Escape (Escape Tone / Échappée)
+        role = 'escape_tone';
+        label = 'Escape Tone';
+        perceptualStability = 'ornamental_stable';
+        stabilityScore = 0.5;
+      }
+    }
+
+    // Si no fue clasificada como adorno específico por falta de contexto o salto:
+    if (label === '') {
+      if (intervalFromRoot === 14 % 12 || intervalFromRoot === 2 || intervalFromRoot === 5 || intervalFromRoot === 9) {
+        role = 'extension';
+        label = intervalFromRoot === 2 ? '9th Tension' : intervalFromRoot === 5 ? '11th Tension' : '13th Tension';
+        perceptualStability = 'colored_stable';
+        stabilityScore = 0.7;
+      } else {
+        const modeOffsets = SCALE_MODE_OFFSETS[scaleMode.toLowerCase()] ?? SCALE_MODE_OFFSETS['major'];
+        const isScaleTone = modeOffsets.includes(normalizeSemitone(pc - rootPc));
+        if (isScaleTone) {
+          role = 'scale_tone';
+          label = 'Scale Tone';
+          perceptualStability = resolvesByStep ? 'ornamental_stable' : (metricAccent === 'weak' ? 'stable' : 'tense_unresolved');
+          stabilityScore = resolvesByStep ? 0.6 : (metricAccent === 'weak' ? 0.5 : 0.3);
+        } else {
+          role = 'chromatic';
+          label = 'Chromatic Non-chord Tone';
+          perceptualStability = resolvesByStep ? 'ornamental_stable' : 'dissonant';
+          stabilityScore = resolvesByStep ? 0.4 : 0.1;
+        }
+      }
+    }
+  }
+
+  return {
+    pitchClass: pc,
+    isChordTone: isTone,
+    role,
+    metricAccent,
+    perceptualStability,
+    stabilityScore,
+    distanceToNearestChordTone: distanceToNearest,
+    intervalFromRoot,
+    resolvesByStep,
+    label,
+  };
+}
+
+/**
+ * REQ-5.3: Detección y resolución de mezclas modales y acordes prestados.
+ * Identifica la procedencia del modo paralelo, recopila modos candidatos cuando existe ambigüedad
+ * y aplica una jerarquía de preferencia documentada sin inventar procedencias únicas arbitrarias.
+ */
+export function detectModalMixture(
+  rawBorrowed: unknown,
+  tonic: string | number,
+  scaleContext: string = "major",
+  rootSemitones: number,
+  chordQuality: ChordQuality,
+  degreeIndex: number
+): ModalMixtureResult {
+  const normExplicit = normalizeBorrowed(rawBorrowed);
+  if (normExplicit && normExplicit !== "custom_borrowed") {
+    let modeClean = normExplicit;
+    if (modeClean.includes("phryg")) modeClean = "phrygian";
+    else if (modeClean.includes("lyd")) modeClean = "lydian";
+    else if (modeClean.includes("dor")) modeClean = "dorian";
+    else if (modeClean.includes("mix")) modeClean = "mixolydian";
+    else if (modeClean.includes("loc")) modeClean = "locrian";
+    else if (modeClean.includes("min") || modeClean.includes("aeol")) modeClean = "minor";
+    else if (modeClean.includes("maj") || modeClean.includes("ion")) modeClean = "major";
+
+    return {
+      isBorrowed: true,
+      provenance: 'explicit',
+      borrowedMode: modeClean,
+      candidateModes: [modeClean],
+      isAmbiguous: false,
+      explanation: `Préstamo modal explícito declarado en los metadatos (${modeClean})`,
+    };
+  }
+
+  const tonicPc = typeof tonic === "number" ? normalizeSemitone(tonic) : getPitchClass(tonic);
+  const normActive = scaleContext.toLowerCase();
+  const activeOffsets = SCALE_MODE_OFFSETS[normActive] ?? SCALE_MODE_OFFSETS["major"];
+
+  // 1. Comprobar si el acorde es diatónico en el contexto activo
+  const diatonicTriadQuality = DIATONIC_DEGREES_BY_SCALE[normActive]?.[degreeIndex]?.quality;
+  const diatonic7thQuality = DIATONIC_7TH_QUALITIES_BY_MODE[normActive]?.[degreeIndex];
+  const diatonicPc = normalizeSemitone(tonicPc + activeOffsets[degreeIndex - 1]);
+
+  const isDiatonicRoot = diatonicPc === rootSemitones;
+  const isDiatonicQuality = chordQuality === diatonicTriadQuality || chordQuality === diatonic7thQuality;
+
+  if (isDiatonicRoot && isDiatonicQuality) {
+    return {
+      isBorrowed: false,
+      provenance: 'none',
+      borrowedMode: null,
+      candidateModes: [],
+      isAmbiguous: false,
+      explanation: `Acorde diatónico nativo en el modo activo (${normActive})`,
+    };
+  }
+
+  // 2. Prospección en los modos paralelos de la tónica
+  const PARALLEL_MODES = normActive === "major"
+    ? ["minor", "mixolydian", "dorian", "phrygian", "lydian", "locrian"]
+    : ["major", "dorian", "mixolydian", "phrygian", "lydian", "locrian"];
+
+  const candidateModes: string[] = [];
+
+  for (const pMode of PARALLEL_MODES) {
+    const offsets = SCALE_MODE_OFFSETS[pMode];
+    if (!offsets) continue;
+
+    for (let d = 1; d <= 7; d++) {
+      const pPc = normalizeSemitone(tonicPc + offsets[d - 1]);
+      if (pPc === rootSemitones) {
+        const triadQ = DIATONIC_DEGREES_BY_SCALE[pMode]?.[d]?.quality;
+        const tetradQ = DIATONIC_7TH_QUALITIES_BY_MODE[pMode]?.[d];
+        if (chordQuality === triadQ || chordQuality === tetradQ ||
+            (chordQuality === "maj" && (triadQ === "maj" || tetradQ === "maj7" || tetradQ === "dom7")) ||
+            (chordQuality === "min" && (triadQ === "min" || tetradQ === "min7"))) {
+          if (!candidateModes.includes(pMode)) {
+            candidateModes.push(pMode);
+          }
+        }
+      }
+    }
+  }
+
+  if (candidateModes.length === 0) {
+    return {
+      isBorrowed: false,
+      provenance: 'none',
+      borrowedMode: null,
+      candidateModes: [],
+      isAmbiguous: false,
+      explanation: 'No se encontraron coincidencias directas en los modos paralelos principales',
+    };
+  }
+
+  // 3. Regla de preferencia teórica documentada ante ambigüedad
+  const intervalFromTonic = normalizeSemitone(rootSemitones - tonicPc);
+  let preferredMode = candidateModes[0];
+
+  if (normActive === "major") {
+    // bVI (8 st), bIII (3 st), iv (5 st min), ii° (2 st dim) -> procedencia primaria: minor (eólico paralelo)
+    if (intervalFromTonic === 8 || intervalFromTonic === 3 || (intervalFromTonic === 5 && chordQuality === "min") || (intervalFromTonic === 2 && chordQuality === "dim")) {
+      preferredMode = candidateModes.includes("minor") ? "minor" : preferredMode;
+    } else if (intervalFromTonic === 1) { // bII (napolitano) -> frigio
+      preferredMode = candidateModes.includes("phrygian") ? "phrygian" : preferredMode;
+    } else if (intervalFromTonic === 10) { // bVII -> mixolidio o menor
+      preferredMode = candidateModes.includes("mixolydian") ? "mixolydian" : (candidateModes.includes("minor") ? "minor" : preferredMode);
+    } else if (intervalFromTonic === 6 || (intervalFromTonic === 2 && chordQuality === "maj")) { // #iv° o II -> lidio
+      preferredMode = candidateModes.includes("lydian") ? "lydian" : preferredMode;
+    }
+  } else {
+    // IV mayor (5 st maj) o ii menor (2 st min) -> dórico
+    if ((intervalFromTonic === 5 && chordQuality === "maj") || (intervalFromTonic === 2 && chordQuality === "min")) {
+      preferredMode = candidateModes.includes("dorian") ? "dorian" : preferredMode;
+    } else if ((intervalFromTonic === 0 && chordQuality === "maj") || (intervalFromTonic === 7 && chordQuality === "maj")) { // I mayor o V mayor
+      preferredMode = candidateModes.includes("major") ? "major" : preferredMode;
+    } else if (intervalFromTonic === 1) { // bII -> frigio
+      preferredMode = candidateModes.includes("phrygian") ? "phrygian" : preferredMode;
+    }
+  }
+
+  const isAmbiguous = candidateModes.length > 1;
+  const explanation = isAmbiguous
+    ? `Préstamo inferido con ambigüedad: modos compatibles [${candidateModes.join(", ")}]. Preferencia armónica asignada a '${preferredMode}'.`
+    : `Préstamo modal inferido unívocamente del modo paralelo '${preferredMode}'.`;
+
+  return {
+    isBorrowed: true,
+    provenance: 'inferred',
+    borrowedMode: preferredMode,
+    candidateModes,
+    isAmbiguous,
+    explanation,
+  };
+}
 
 export function normalizeKey(key: KeySignature | string | undefined | null): { tonic: string; scale: string } {
   if (!key) return { tonic: 'C', scale: 'major' };
@@ -900,20 +1391,43 @@ export function buildIntermediateChord(
     // Modo determinante: modo prestado si existe, o tonalidad activa
     const activeMode = borrowedMode || scaleContext || "major";
     if (is7th) {
-      const mode7th = DIATONIC_7TH_QUALITIES_BY_MODE[activeMode]?.[rootNum];
-      if (mode7th) {
-        chordQuality = mode7th;
-      } else if (String(raw.roman || '').includes("^Δ") || String(raw.symbol || '').includes("maj7")) {
+      if (!borrowedMode && hasFlatDegree && (rootNum === 6 || rootNum === 3 || rootNum === 2)) {
         chordQuality = "maj7";
+      } else if (!borrowedMode && hasFlatDegree && rootNum === 7) {
+        chordQuality = "dom7";
       } else {
-        chordQuality = (rootNum === 5 || activeMode === "mixolydian") ? "dom7" : "maj7";
+        const mode7th = DIATONIC_7TH_QUALITIES_BY_MODE[activeMode]?.[rootNum];
+        if (mode7th) {
+          chordQuality = mode7th;
+        } else if (String(raw.roman || '').includes("^Δ") || String(raw.symbol || '').includes("maj7")) {
+          chordQuality = "maj7";
+        } else {
+          chordQuality = (rootNum === 5 || activeMode === "mixolydian") ? "dom7" : "maj7";
+        }
       }
     } else {
-      const modeTriad = DIATONIC_DEGREES_BY_SCALE[activeMode]?.[rootNum]?.quality ||
+      let modeTriad = DIATONIC_DEGREES_BY_SCALE[activeMode]?.[rootNum]?.quality ||
         MODAL_MAP[activeMode]?.[rootNum]?.quality ||
         "maj";
+      if (!borrowedMode && hasFlatDegree && (rootNum === 6 || rootNum === 3 || rootNum === 7 || rootNum === 2)) {
+        modeTriad = "maj";
+      }
       chordQuality = modeTriad;
     }
+  }
+
+  // ── 5b. Detección y validación de mezcla modal (REQ-5.3) ──
+  const modalMixture = detectModalMixture(
+    rawBorrowed,
+    tonic,
+    scaleContext,
+    rootSemitones,
+    chordQuality,
+    degreeIndex
+  );
+
+  if (!borrowedMode && modalMixture.isBorrowed && !applied) {
+    borrowedMode = modalMixture.borrowedMode;
   }
 
   // ── 6. Colección de voces funcionales (ChordTone[]) ──
@@ -1065,6 +1579,80 @@ export function buildIntermediateChord(
 
   const bassPc = normalizeSemitone(rootSemitones + bassTone.interval);
   const bassName = PC_NAMES[bassPc];
+  const bassIntervalFromRoot = normalizeSemitone(bassPc - rootSemitones);
+
+  // Determinar el grado relativo del bajo respecto a la tónica y modo activo (REQ-2.3, REQ-4.1)
+  let bassDegreeIndex = 1;
+  let bassScaleDegree = "1";
+  let bassAlteration = 0;
+
+  let foundExact = false;
+  for (let d = 1; d <= 7; d++) {
+    const diatonicPc = normalizeSemitone(tonicSemitones + modeOffsets[d - 1]);
+    if (diatonicPc === bassPc) {
+      bassDegreeIndex = d;
+      bassScaleDegree = String(d);
+      bassAlteration = 0;
+      foundExact = true;
+      break;
+    }
+  }
+
+  if (!foundExact) {
+    const semiFromTonic = normalizeSemitone(bassPc - tonicSemitones);
+    if (semiFromTonic === 10) {
+      bassDegreeIndex = 7;
+      bassScaleDegree = "b7";
+      bassAlteration = -1;
+    } else if (semiFromTonic === 8) {
+      bassDegreeIndex = 6;
+      bassScaleDegree = "b6";
+      bassAlteration = -1;
+    } else if (semiFromTonic === 3) {
+      bassDegreeIndex = 3;
+      bassScaleDegree = "b3";
+      bassAlteration = -1;
+    } else if (semiFromTonic === 1) {
+      if (isSharpSecondary || bassName.includes("#")) {
+        bassDegreeIndex = 1;
+        bassScaleDegree = "#1";
+        bassAlteration = 1;
+      } else {
+        bassDegreeIndex = 2;
+        bassScaleDegree = "b2";
+        bassAlteration = -1;
+      }
+    } else if (semiFromTonic === 6) {
+      if (useFlats && (bassName.includes("b") || bassName.includes("♭"))) {
+        bassDegreeIndex = 5;
+        bassScaleDegree = "b5";
+        bassAlteration = -1;
+      } else {
+        bassDegreeIndex = 4;
+        bassScaleDegree = "#4";
+        bassAlteration = 1;
+      }
+    } else {
+      // Fallback por proximidad diatónica (priorizando bemol sobre sostenido)
+      for (let d = 1; d <= 7; d++) {
+        const diatonicPc = normalizeSemitone(tonicSemitones + modeOffsets[d - 1]);
+        const diff = normalizeSemitone(bassPc - diatonicPc);
+        if (diff === 11) {
+          bassDegreeIndex = d;
+          bassScaleDegree = `b${d}`;
+          bassAlteration = -1;
+          break;
+        } else if (diff === 1) {
+          bassDegreeIndex = d;
+          bassScaleDegree = `#${d}`;
+          bassAlteration = 1;
+          break;
+        }
+      }
+    }
+  }
+
+  const { color: bassColor } = getDegreeColor(bassScaleDegree);
 
   // ── 9. audioVoicingMidi: Notas MIDI exactas para WebAudio ──
   let tonicMidi: number;
@@ -1128,9 +1716,15 @@ export function buildIntermediateChord(
     bassTone,
     bassName,
     isAmbiguousInversion,
+    bassDegreeIndex,
+    bassScaleDegree,
+    bassAlteration,
+    bassIntervalFromRoot,
+    bassColor,
     chordQuality,
     type: resolvedType,
     borrowedMode,
+    modalMixture,
     useFlats,
     omits: rawOmits.map(Number).filter(n => !isNaN(n)),
     suspensions: rawSuspensions.map(Number).filter(n => !isNaN(n)),
@@ -1185,6 +1779,14 @@ export function buildCanonicalChordIR(
       targetPitchClass: model.applied?.targetRootSemitones,
       isTritoneSub: Boolean(model.applied?.isTritoneSub),
       borrowedMode: model.borrowedMode || undefined,
+      borrowed: model.modalMixture ? {
+        isBorrowed: model.modalMixture.isBorrowed,
+        provenance: model.modalMixture.provenance,
+        mode: model.modalMixture.borrowedMode,
+        candidateModes: [...model.modalMixture.candidateModes],
+        isAmbiguous: model.modalMixture.isAmbiguous,
+        explanation: model.modalMixture.explanation,
+      } : undefined,
     },
     tones: Object.freeze([...model.tones]),
     bassAndInversion: {
@@ -1193,6 +1795,10 @@ export function buildCanonicalChordIR(
       bassPitchClass: model.bassSemitones,
       bassName: model.bassName,
       isAmbiguous: model.isAmbiguousInversion,
+      bassDegreeIndex: model.bassDegreeIndex,
+      bassScaleDegree: model.bassScaleDegree,
+      bassAlteration: model.bassAlteration,
+      bassIntervalFromRoot: model.bassIntervalFromRoot,
     },
     outputs: {
       effectivePitches: [...model.effectivePitches],
@@ -1200,6 +1806,7 @@ export function buildCanonicalChordIR(
       romanNumeral: roman,
       chordSymbol: symbol,
       sublabel,
+      bassColor: model.bassColor,
       functionalLabels,
     },
   };
@@ -1548,7 +2155,13 @@ export function parseHookpadChord(
   });
 
   const rootDegreeSd = String(model.degreeIndex);
-  const { color: chordColor, isAltered: rootAltered } = getDegreeColor(rootDegreeSd);
+  const { color: rootColor, isAltered: rootAltered } = getDegreeColor(rootDegreeSd);
+  // REQ-9.2: El color del bloque armónico SIEMPRE se deriva del grado del bajo efectivo
+  // En posición fundamental el bajo coincide con la fundamental; en inversiones o slash chords corresponde a la nota inferior real.
+  const chordColor = model.bassColor ?? rootColor;
+
+  const isBassAltered = model.bassAlteration !== undefined && model.bassAlteration !== 0;
+  const isChordAltered = isBassAltered || rootAltered || Boolean(model.borrowedMode) || Boolean(model.applied) || Boolean(raw.isAltered);
 
   const typeNum = model.type;
 
@@ -1578,10 +2191,13 @@ export function parseHookpadChord(
     options: raw.options,
     notes: notePitches,
     bassNote: model.bassName,
+    bassDegreeIndex: model.bassDegreeIndex,
+    bassScaleDegree: model.bassScaleDegree,
+    bassColor: model.bassColor,
     midiNotes: model.audioVoicingMidi,
     sublabel,
     color: chordColor,
-    isAltered: rootAltered || Boolean(model.borrowedMode) || Boolean(model.applied) || model.requestedInversion > 0,
+    isAltered: isChordAltered,
     _rootSemitones: model.rootSemitones,
     bassSemitones: model.bassSemitones,
     resolvedInversion: model.resolvedInversion,

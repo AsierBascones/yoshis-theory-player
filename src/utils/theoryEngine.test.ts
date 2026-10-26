@@ -9,6 +9,16 @@
  */
 
 import {
+  normalizeSemitone,
+  getPitchClass,
+  getScalePitchClasses,
+  getChordIntervals,
+  getDiatonicChordQuality,
+  getDegreePitchClass,
+  getMetricAccent,
+  isChordTone,
+  getMelodicStability,
+  detectModalMixture,
   buildIntermediateChord,
   buildCanonicalChordIR,
   renderRomanNumeral,
@@ -284,6 +294,251 @@ assert(ir.bassAndInversion.validatedInversion === 1, 'IR validatedInversion es 1
 assert(ir.outputs.romanNumeral === 'V⁶/V', 'IR outputs.romanNumeral es V⁶/V');
 assert(ir.outputs.chordSymbol === 'D/F#', 'IR outputs.chordSymbol es D/F#');
 assert(ir.outputs.audioVoicingMidi[0] === 42, `IR outputs.audioVoicingMidi bajo es 42 / F#2 (obtenido: ${ir.outputs.audioVoicingMidi[0]})`);
+
+// ────────────────────────────────────────────────────────────────────────────
+// 5. FUNDAMENTOS MATEMÁTICOS Y TEORÍA BASE (SPEC SECCIONES 1 Y 2)
+// ────────────────────────────────────────────────────────────────────────────
+console.log('\n5. Fundamentos Matemáticos y Modos (Spec Sec. 1 y 2):');
+
+// 1.1 y 1.2: Normalización en Z12 y operaciones cromáticas
+assert(normalizeSemitone(0) === 0, 'normalizeSemitone(0) es 0');
+assert(normalizeSemitone(12) === 0, 'normalizeSemitone(12) es 0');
+assert(normalizeSemitone(14) === 2, 'normalizeSemitone(14) es 2');
+assert(normalizeSemitone(-1) === 11, 'normalizeSemitone(-1) es 11');
+assert(normalizeSemitone(-13) === 11, 'normalizeSemitone(-13) es 11');
+assert(normalizeSemitone(25) === 1, 'normalizeSemitone(25) es 1');
+
+// getPitchClass
+assert(getPitchClass('C') === 0, 'getPitchClass(C) es 0');
+assert(getPitchClass('C#') === 1, 'getPitchClass(C#) es 1');
+assert(getPitchClass('Db') === 1, 'getPitchClass(Db) es 1');
+assert(getPitchClass('F#') === 6, 'getPitchClass(F#) es 6');
+assert(getPitchClass(60) === 0, 'getPitchClass(MIDI 60) es 0');
+assert(getPitchClass(69) === 9, 'getPitchClass(MIDI 69 / A4) es 9');
+
+// 1.3: Intervalos de cualidades armónicas
+assert(JSON.stringify(getChordIntervals('maj')) === JSON.stringify([0, 4, 7]), 'Intervalos tríada mayor: [0, 4, 7]');
+assert(JSON.stringify(getChordIntervals('min')) === JSON.stringify([0, 3, 7]), 'Intervalos tríada menor: [0, 3, 7]');
+assert(JSON.stringify(getChordIntervals('dim')) === JSON.stringify([0, 3, 6]), 'Intervalos tríada disminuida: [0, 3, 6]');
+assert(JSON.stringify(getChordIntervals('aug')) === JSON.stringify([0, 4, 8]), 'Intervalos tríada aumentada: [0, 4, 8]');
+assert(JSON.stringify(getChordIntervals('dom7')) === JSON.stringify([0, 4, 7, 10]), 'Intervalos dom7: [0, 4, 7, 10]');
+assert(JSON.stringify(getChordIntervals('maj7')) === JSON.stringify([0, 4, 7, 11]), 'Intervalos maj7: [0, 4, 7, 11]');
+assert(JSON.stringify(getChordIntervals('min7')) === JSON.stringify([0, 3, 7, 10]), 'Intervalos min7: [0, 3, 7, 10]');
+assert(JSON.stringify(getChordIntervals('halfdim7')) === JSON.stringify([0, 3, 6, 10]), 'Intervalos halfdim7: [0, 3, 6, 10]');
+assert(JSON.stringify(getChordIntervals('dim7')) === JSON.stringify([0, 3, 6, 9]), 'Intervalos dim7: [0, 3, 6, 9]');
+
+// 2.1 y 2.2: Escalas de los 7 modos preservando orden
+assert(JSON.stringify(getScalePitchClasses('C', 'major')) === JSON.stringify([0, 2, 4, 5, 7, 9, 11]), 'C major scale pitch classes');
+assert(JSON.stringify(getScalePitchClasses('A', 'minor')) === JSON.stringify([9, 11, 0, 2, 4, 5, 7]), 'A minor scale pitch classes');
+assert(JSON.stringify(getScalePitchClasses('D', 'dorian')) === JSON.stringify([2, 4, 5, 7, 9, 11, 0]), 'D dorian scale pitch classes');
+assert(JSON.stringify(getScalePitchClasses('E', 'phrygian')) === JSON.stringify([4, 5, 7, 9, 11, 0, 2]), 'E phrygian scale pitch classes');
+assert(JSON.stringify(getScalePitchClasses('F', 'lydian')) === JSON.stringify([5, 7, 9, 11, 0, 2, 4]), 'F lydian scale pitch classes');
+assert(JSON.stringify(getScalePitchClasses('G', 'mixolydian')) === JSON.stringify([7, 9, 11, 0, 2, 4, 5]), 'G mixolydian scale pitch classes');
+assert(JSON.stringify(getScalePitchClasses('B', 'locrian')) === JSON.stringify([11, 0, 2, 4, 5, 7, 9]), 'B locrian scale pitch classes');
+
+// 2.3: Conversión de grado relativo a pitch class
+assert(getDegreePitchClass(1, 'C', 'major') === 0, 'Grado 1 en C mayor es 0');
+assert(getDegreePitchClass(3, 'C', 'major') === 4, 'Grado 3 en C mayor es 4');
+assert(getDegreePitchClass('b3', 'C', 'major') === 3, 'Grado b3 en C mayor es 3');
+assert(getDegreePitchClass('#4', 'C', 'major') === 6, 'Grado #4 en C mayor es 6');
+assert(getDegreePitchClass('b7', 'C', 'major') === 10, 'Grado b7 en C mayor es 10');
+
+// Cualidades diatónicas
+assert(getDiatonicChordQuality(1, 'major', false) === 'maj', 'Diatonic triad 1 in major is maj');
+assert(getDiatonicChordQuality(2, 'major', false) === 'min', 'Diatonic triad 2 in major is min');
+assert(getDiatonicChordQuality(7, 'major', false) === 'dim', 'Diatonic triad 7 in major is dim');
+assert(getDiatonicChordQuality(5, 'major', true) === 'dom7', 'Diatonic 7th 5 in major is dom7');
+assert(getDiatonicChordQuality(7, 'major', true) === 'halfdim7', 'Diatonic 7th 7 in major is halfdim7');
+
+// ────────────────────────────────────────────────────────────────────────────
+// 6. BAJO EFECTIVO, INVERSIONES Y COLOR POR BAJO (SPEC SECCIONES 4 Y 9.2)
+// ────────────────────────────────────────────────────────────────────────────
+console.log('\n6. Bajo Efectivo, Inversiones y Color por Bajo (Spec Sec. 4 y 9.2):');
+
+// I en estado fundamental (C) -> el bajo efectivo es C (grado 1, rojo #D92525, NO alterado)
+const chordI = parseHookpadChord({ root: 1, type: 5, inversion: 0 }, 'C');
+assert(chordI.bassNote === 'C', `I bajo es C (obtenido: ${chordI.bassNote})`);
+assert(chordI.bassDegreeIndex === 1, `I grado del bajo es 1 (obtenido: ${chordI.bassDegreeIndex})`);
+assert(chordI.bassScaleDegree === '1', `I bassScaleDegree es 1 (obtenido: ${chordI.bassScaleDegree})`);
+assert(chordI.color === '#D92525', `REQ-9.2: I inv 0 color es rojo de fundamental (#D92525) (obtenido: ${chordI.color})`);
+assert(!chordI.isAltered, 'I inv 0 es diatónico y no está alterado');
+
+// I6 en Do Mayor (C/E) -> bajo efectivo es E (grado 3, amarillo #C9AC17, NO alterado)
+const chordI6 = parseHookpadChord({ root: 1, type: 5, inversion: 1 }, 'C');
+assert(chordI6.bassNote === 'E', `I6 bajo es E (obtenido: ${chordI6.bassNote})`);
+assert(chordI6.bassDegreeIndex === 3, `I6 grado del bajo es 3 (obtenido: ${chordI6.bassDegreeIndex})`);
+assert(chordI6.bassScaleDegree === '3', `I6 bassScaleDegree es 3 (obtenido: ${chordI6.bassScaleDegree})`);
+assert(chordI6.bassColor === '#C9AC17', `I6 bassColor es amarillo (#C9AC17) (obtenido: ${chordI6.bassColor})`);
+assert(chordI6.color === '#C9AC17', `REQ-9.2: I6 color del bloque deriva del bajo amarillo (#C9AC17) (obtenido: ${chordI6.color})`);
+assert(!chordI6.isAltered, 'I6 es diatónico y no está alterado (sin rayas espurias)');
+
+// I6/4 en Do Mayor (C/G) -> bajo efectivo es G (grado 5, cian #0DA8D6)
+const chordI64 = parseHookpadChord({ root: 1, type: 5, inversion: 2 }, 'C');
+assert(chordI64.bassNote === 'G', `I64 bajo es G (obtenido: ${chordI64.bassNote})`);
+assert(chordI64.bassDegreeIndex === 5, `I64 grado del bajo es 5 (obtenido: ${chordI64.bassDegreeIndex})`);
+assert(chordI64.color === '#0DA8D6', `REQ-9.2: I64 color del bloque deriva del bajo cian (#0DA8D6) (obtenido: ${chordI64.color})`);
+
+// V6/5 en Do Mayor (G7/B) -> bajo efectivo es B (grado 7, magenta #B5179E)
+const chordV65 = parseHookpadChord({ root: 5, type: 7, inversion: 1 }, 'C');
+assert(chordV65.bassNote === 'B', `V65 bajo es B (obtenido: ${chordV65.bassNote})`);
+assert(chordV65.bassDegreeIndex === 7, `V65 grado del bajo es 7 (obtenido: ${chordV65.bassDegreeIndex})`);
+assert(chordV65.bassScaleDegree === '7', `V65 bassScaleDegree es 7 (obtenido: ${chordV65.bassScaleDegree})`);
+assert(chordV65.bassColor === '#B5179E', `V65 bassColor es magenta (#B5179E) (obtenido: ${chordV65.bassColor})`);
+assert(chordV65.color === '#B5179E', `REQ-9.2: V65 color del bloque deriva del bajo magenta (#B5179E) (obtenido: ${chordV65.color})`);
+
+// V4/2 en Do Mayor (G7/F) -> bajo efectivo es F (grado 4, verde #1DB33D)
+const chordV42 = parseHookpadChord({ root: 5, type: 7, inversion: 3 }, 'C');
+assert(chordV42.bassNote === 'F', `V42 bajo es F (obtenido: ${chordV42.bassNote})`);
+assert(chordV42.bassDegreeIndex === 4, `V42 grado del bajo es 4 (obtenido: ${chordV42.bassDegreeIndex})`);
+assert(chordV42.bassScaleDegree === '4', `V42 bassScaleDegree es 4 (obtenido: ${chordV42.bassScaleDegree})`);
+assert(chordV42.bassColor === '#1DB33D', `V42 bassColor es verde (#1DB33D) (obtenido: ${chordV42.bassColor})`);
+assert(chordV42.color === '#1DB33D', `REQ-9.2: V42 color del bloque deriva del bajo verde (#1DB33D) (obtenido: ${chordV42.color})`);
+
+// Bajo alterado / secundario V6/V (D/F# en C Mayor) -> bajo F# (grado #4, verde #1DB33D con isAltered=true)
+const chordV6V = parseHookpadChord({ applied: 5, root: 5, type: 5, inversion: 1 }, 'C');
+assert(chordV6V.bassNote === 'F#', `V6/V bajo es F# (obtenido: ${chordV6V.bassNote})`);
+assert(chordV6V.bassDegreeIndex === 4, `V6/V grado base del bajo es 4 (obtenido: ${chordV6V.bassDegreeIndex})`);
+assert(chordV6V.bassScaleDegree === '#4', `V6/V bassScaleDegree es #4 (obtenido: ${chordV6V.bassScaleDegree})`);
+assert(chordV6V.color === '#1DB33D', `V6/V color deriva del grado 4 verde (#1DB33D) (obtenido: ${chordV6V.color})`);
+assert(chordV6V.isAltered === true, 'V6/V bajo alterado está marcado isAltered=true (rayado)');
+
+// Acorde con slash bajo alterado C7/Bb (I4/2 dom7 en C Mayor) -> bajo Bb (grado b7, magenta #B5179E con isAltered=true)
+const chordI42 = parseHookpadChord({ root: 1, type: 7, quality: 'dom7', inversion: 3 }, 'C');
+assert(chordI42.bassNote === 'Bb', `C7/Bb bajo es Bb (obtenido: ${chordI42.bassNote})`);
+assert(chordI42.bassScaleDegree === 'b7', `C7/Bb bassScaleDegree es b7 (obtenido: ${chordI42.bassScaleDegree})`);
+assert(chordI42.color === '#B5179E', `C7/Bb color deriva de grado 7 magenta (#B5179E) (obtenido: ${chordI42.color})`);
+assert(chordI42.isAltered === true, 'C7/Bb tiene bajo alterado b7 y está marcado isAltered=true');
+
+// ────────────────────────────────────────────────────────────────────────────
+// 7. ESTABILIDAD MELÓDICA CONTEXTUAL Y MÉTRICA (SPEC SECCIÓN 6)
+// ────────────────────────────────────────────────────────────────────────────
+console.log('\n7. Estabilidad Melódica Contextual y Métrica (Spec Sec. 6):');
+
+// 7.1 Pertenencia al acorde activo (ChordMember)
+assert(isChordTone('C', chordI) === true, 'C es chord tone de C mayor');
+assert(isChordTone('E', chordI) === true, 'E es chord tone de C mayor');
+assert(isChordTone('G', chordI) === true, 'G es chord tone de C mayor');
+assert(isChordTone('D', chordI) === false, 'D no es chord tone de tríada C mayor');
+assert(isChordTone('F#', chordI) === false, 'F# no es chord tone de C mayor');
+
+// 7.2 Acento métrico
+assert(getMetricAccent(1.0, [4, 4]) === 'strong', 'Pulso 1.0 en 4/4 es strong (downbeat)');
+assert(getMetricAccent(3.0, [4, 4]) === 'medium', 'Pulso 3.0 en 4/4 es medium (acento secundario)');
+assert(getMetricAccent(2.0, [4, 4]) === 'weak', 'Pulso 2.0 en 4/4 es weak');
+assert(getMetricAccent(2.5, [4, 4]) === 'weak', 'Subdivisión 2.5 en 4/4 es weak');
+assert(getMetricAccent(1.0, [6, 8]) === 'strong', 'Pulso 1.0 en 6/8 es strong');
+assert(getMetricAccent(2.5, [6, 8]) === 'medium', 'Pulso 2.5 en 6/8 (offset 1.5 negras) es medium');
+
+// 7.3 Factor armónico en tiempo fuerte vs tiempo débil
+const stabRootStrong = getMelodicStability(60, chordI, 'major', { beat: 1.0 }); // C4 en tiempo fuerte
+assert(stabRootStrong.isChordTone === true, 'C4 en tiempo 1 es chord tone');
+assert(stabRootStrong.role === 'root', 'C4 rol es root');
+assert(stabRootStrong.perceptualStability === 'very_stable', 'C4 en tiempo fuerte es very_stable');
+assert(stabRootStrong.stabilityScore === 1.0, 'C4 en tiempo fuerte tiene score 1.0');
+
+const stabRootWeak = getMelodicStability(60, chordI, 'major', { beat: 2.0 }); // C4 en tiempo débil
+assert(stabRootWeak.perceptualStability === 'stable', 'C4 en tiempo débil es stable (no very_stable)');
+assert(stabRootWeak.stabilityScore === 0.9, 'C4 en tiempo débil tiene score 0.9');
+
+// 7.4 Nota de Paso no acentuada (Unaccented Passing Tone): C4 (60) -> D4 (62, beat 2) -> E4 (64, beat 3)
+const stabPassing = getMelodicStability(62, chordI, 'major', {
+  beat: 2.0,
+  prevNoteMidi: 60,
+  nextNoteMidi: 64,
+});
+assert(stabPassing.isChordTone === false, 'D4 no es chord tone');
+assert(stabPassing.role === 'passing_tone', `D4 rol es passing_tone (obtenido: ${stabPassing.role})`);
+assert(stabPassing.resolvesByStep === true, 'D4 resuelve por paso conjunto a E4 (chord tone)');
+assert(stabPassing.label === 'Unaccented Passing Tone', `D4 etiqueta es Unaccented Passing Tone (obtenido: ${stabPassing.label})`);
+assert(stabPassing.perceptualStability === 'ornamental_stable', 'D4 nota de paso débil es ornamental_stable');
+
+// 7.5 Nota de Paso acentuada (Accented Passing Tone): C4 (60) -> D4 (62, beat 1) -> E4 (64, beat 2)
+const stabAccPassing = getMelodicStability(62, chordI, 'major', {
+  beat: 1.0,
+  prevNoteMidi: 60,
+  nextNoteMidi: 64,
+});
+assert(stabAccPassing.role === 'passing_tone', 'D4 en beat 1 es passing_tone');
+assert(stabAccPassing.label === 'Accented Passing Tone', 'D4 en beat 1 es Accented Passing Tone');
+assert(stabAccPassing.perceptualStability === 'tense_unresolved', 'Nota de paso acentuada crea tensión (tense_unresolved)');
+
+// 7.6 Bordadura superior (Upper Neighbor Tone): E4 (64) -> F4 (65, beat 2) -> E4 (64)
+const stabUpperNeighbor = getMelodicStability(65, chordI, 'major', {
+  beat: 2.0,
+  prevNoteMidi: 64,
+  nextNoteMidi: 64,
+});
+assert(stabUpperNeighbor.role === 'neighbor_tone', 'F4 es neighbor_tone');
+assert(stabUpperNeighbor.label === 'Upper Neighbor Tone', `F4 es Upper Neighbor Tone (obtenido: ${stabUpperNeighbor.label})`);
+assert(stabUpperNeighbor.resolvesByStep === true, 'F4 resuelve por paso conjunto retornando a E4');
+
+// 7.7 Bordadura inferior (Lower Neighbor Tone): E4 (64) -> D4 (62, beat 2) -> E4 (64)
+const stabLowerNeighbor = getMelodicStability(62, chordI, 'major', {
+  beat: 2.0,
+  prevNoteMidi: 64,
+  nextNoteMidi: 64,
+});
+assert(stabLowerNeighbor.role === 'neighbor_tone', 'D4 es neighbor_tone');
+assert(stabLowerNeighbor.label === 'Lower Neighbor Tone', `D4 es Lower Neighbor Tone (obtenido: ${stabLowerNeighbor.label})`);
+
+// 7.8 Suspensión (Suspension): F4 (65) ligado en beat 1 -> resuelve a E4 (64)
+const stabSuspension = getMelodicStability(65, chordI, 'major', {
+  beat: 1.0,
+  prevNoteMidi: 65,
+  nextNoteMidi: 64,
+});
+assert(stabSuspension.role === 'suspension', `F4 ligado en beat 1 es suspension (obtenido: ${stabSuspension.role})`);
+assert(stabSuspension.perceptualStability === 'tense_unresolved', 'Suspensión en tiempo fuerte es tense_unresolved');
+assert(stabSuspension.resolvesByStep === true, 'Suspensión resuelve por paso descendente a E4');
+
+// ────────────────────────────────────────────────────────────────────────────
+// 8. MEZCLA MODAL Y DETECCIÓN AUTOMÁTICA (SPEC SECCIÓN 5.3)
+// ────────────────────────────────────────────────────────────────────────────
+console.log('\n8. Mezcla Modal y Detección Automática (Spec Sec. 5.3):');
+
+// 8.1 Préstamo explícito preservado
+const mixExplicit = detectModalMixture('minor', 'C', 'major', 8, 'maj', 6);
+assert(mixExplicit.isBorrowed === true, 'Préstamo explícito es detectado');
+assert(mixExplicit.provenance === 'explicit', 'Procedencia es explicit');
+assert(mixExplicit.borrowedMode === 'minor', 'Modo prestado es minor');
+assert(!mixExplicit.isAmbiguous, 'No es ambiguo al ser explícito');
+
+// 8.2 Detección automática en Do Mayor: bVI (Ab mayor, root 8, maj)
+const mixAb = detectModalMixture(undefined, 'C', 'major', 8, 'maj', 6);
+assert(mixAb.isBorrowed === true, 'Ab en C mayor es detectado como préstamo automático');
+assert(mixAb.provenance === 'inferred', 'Procedencia es inferred');
+assert(mixAb.borrowedMode === 'minor', `Ab en C mayor asigna modo preferente minor (obtenido: ${mixAb.borrowedMode})`);
+assert(mixAb.candidateModes.includes('minor') && mixAb.candidateModes.includes('phrygian'), 'Ab candidatos incluyen minor y phrygian');
+assert(mixAb.isAmbiguous === true, 'Ab tiene ambigüedad documentada entre modos compatibles');
+
+// 8.3 Detección automática en Do Mayor: bII (Db mayor, root 1, maj - Acorde Napolitano)
+const mixDb = detectModalMixture(undefined, 'C', 'major', 1, 'maj', 2);
+assert(mixDb.isBorrowed === true, 'Db en C mayor es detectado como préstamo');
+assert(mixDb.borrowedMode === 'phrygian', `Db en C mayor asigna phrygian (napolitano) (obtenido: ${mixDb.borrowedMode})`);
+assert(mixDb.candidateModes.includes('phrygian'), 'Db candidatos incluyen phrygian');
+
+// 8.4 Detección automática en Do Mayor: iv (Fm, root 5, min - Subdominante menor)
+const mixFm = detectModalMixture(undefined, 'C', 'major', 5, 'min', 4);
+assert(mixFm.isBorrowed === true, 'Fm en C mayor es detectado como préstamo');
+assert(mixFm.borrowedMode === 'minor', `Fm en C mayor asigna minor (obtenido: ${mixFm.borrowedMode})`);
+
+// 8.5 Detección automática en Do Mayor: bVII (Bb mayor, root 10, maj)
+const mixBb = detectModalMixture(undefined, 'C', 'major', 10, 'maj', 7);
+assert(mixBb.isBorrowed === true, 'Bb en C mayor es detectado como préstamo');
+assert(mixBb.candidateModes.includes('mixolydian') && mixBb.candidateModes.includes('minor'), 'Bb candidatos incluyen mixolydian y minor');
+assert(mixBb.isAmbiguous === true, 'Bb tiene ambigüedad entre mixolydian, minor y dorian');
+
+// 8.6 Acorde diatónico nativo no se marca como préstamo
+const mixDiatonic = detectModalMixture(undefined, 'C', 'major', 0, 'maj', 1);
+assert(mixDiatonic.isBorrowed === false, 'C en C mayor no es préstamo');
+assert(mixDiatonic.provenance === 'none', 'Procedencia diatónica es none');
+
+// 8.7 Integración canónica de mezcla modal en parseHookpadChord (Ab sin metadato explícito)
+const chordAbAuto = parseHookpadChord({ root: 'b6', type: 5 }, 'C');
+assert(chordAbAuto.borrowed === 'minor', `Ab sin metadato infiere borrowed minor en UniversalChord (obtenido: ${chordAbAuto.borrowed})`);
+assert(chordAbAuto.ir?.secondary.borrowed?.isBorrowed === true, 'CanonicalChordIR contiene secondary.borrowed');
+assert(chordAbAuto.ir?.secondary.borrowed?.provenance === 'inferred', 'CanonicalChordIR secondary.borrowed es inferred');
+assert(chordAbAuto.ir?.secondary.borrowed?.isAmbiguous === true, 'CanonicalChordIR secondary.borrowed registra ambigüedad');
 
 // ────────────────────────────────────────────────────────────────────────────
 // RESULTADOS FINALES
