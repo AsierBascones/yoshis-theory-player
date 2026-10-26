@@ -105,7 +105,7 @@ function convertChord(c: RawChord, idx: number): UniversalChord {
     symbol: customSymbol || c.symbol || '',
     rootSd,
     quality,
-    type: (c.type === 7 ? 7 : 5) as 5 | 7 | 9 | 11 | 13,
+    type: (typeof c.type === 'number' ? c.type : (c.symbol?.includes('7') || c.roman?.includes('7') || c.roman?.includes('⁷') ? 7 : 5)) as 5 | 7 | 9 | 11 | 13,
     inversion: inv as 0 | 1 | 2 | 3,
     borrowed: c.borrowed,
     applied: c.applied ? String(c.applied) : undefined,

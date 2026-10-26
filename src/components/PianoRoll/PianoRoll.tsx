@@ -27,6 +27,7 @@ import {
   type DynamicScaleRow,
 } from '../../utils/musicTheory';
 import { resolveChordVoices, getTransposedChordSymbol, getKeyAtBeat } from '../../utils/theoryEngine';
+import { calculateMeasuresTimeline, type MeasureInfo } from '../../utils/rhythmEngine';
 import type { ParsedNote } from '../../utils/theoryParser';
 import type { UniversalChord, ResolvedChordVoice, ScaleMode } from '../../types/music';
 
@@ -218,31 +219,46 @@ const MemoizedChordBarBlock = React.memo(function MemoizedChordBarBlock({
 
   const borderAccentColor = isBorrowed ? '#EAB308' : chordColor;
 
+  const isCompact = width < 45;
+  let displayRoman = (chord.roman || '').replace(/\^/g, '');
+  if (isCompact) {
+    displayRoman = displayRoman.replace(/\s*\([^)]*\)/g, '');
+  }
+
   return (
     <div
       onClick={() => onClick(chord.notes, chord.beat)}
       title={`Tocar acorde ${displaySymbol} (${chord.roman})`}
-      className="absolute top-0 bottom-0 border-r border-gray-900/60 flex flex-col items-center justify-center font-bold cursor-pointer hover:brightness-125 transition-all select-none"
+      className="absolute top-0 bottom-0 border-r border-gray-900/60 font-bold cursor-pointer hover:brightness-125 transition-all select-none"
       style={{
         left: `${left}px`,
         width: `${width}px`,
         background: isActive ? activeBg : normalBg,
         borderTop: `4px solid ${borderAccentColor}`,
         boxShadow: isActive ? `inset 0 0 12px ${getHexAlpha(borderAccentColor, 0.4)}` : 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        minWidth: 0,
+        padding: '0 2px',
       }}
     >
       <span
-        className="text-sm font-serif drop-shadow-sm font-bold tracking-tight leading-tight"
+        className={`${isCompact ? 'text-[9px]' : 'text-xs md:text-sm'} font-serif drop-shadow-sm font-bold tracking-tight leading-tight w-full text-center truncate`}
         style={{ color: isBorrowed ? '#FACC15' : chordColor }}
       >
-        {chord.roman}
+        {displayRoman}
       </span>
-      {chord.sublabel && (
-        <span className={`text-[10px] font-sans font-medium leading-tight ${isBorrowed ? 'text-amber-300 font-semibold' : 'text-gray-300'}`}>
+      {!isCompact && chord.sublabel && !displayRoman.includes(chord.sublabel) && (
+        <span className={`text-[9px] font-sans font-medium leading-tight w-full text-center truncate ${isBorrowed ? 'text-amber-300 font-semibold' : 'text-gray-300'}`}>
           {chord.sublabel}
         </span>
       )}
-      <span className={`text-[10px] leading-tight ${isActive ? 'text-gray-200 font-semibold' : 'text-gray-400'}`}>
+      <span className={`text-[9px] md:text-[10px] leading-tight w-full text-center truncate ${isActive ? 'text-gray-200 font-semibold' : 'text-gray-400'}`}>
         {displaySymbol}
       </span>
     </div>
@@ -423,25 +439,24 @@ export default function PianoRoll() {
     );
   }, [song.chords, visibleStartBeat, visibleEndBeat]);
 
-  const visibleGridLines = useMemo(() => {
-    const start = Math.max(0, Math.floor(visibleStartBeat) - 1);
-    const end = Math.min(song.totalBeats, Math.ceil(visibleEndBeat) + 1);
-    const lines: number[] = [];
-    for (let i = start; i <= end; i++) {
-      lines.push(i);
-    }
-    return lines;
-  }, [visibleStartBeat, visibleEndBeat, song.totalBeats]);
+  const fallbackMeter = useMemo(() => ({
+    numerator: song.canonicalMeter?.numerator || song.timeSignature?.[0] || 4,
+    denominator: song.canonicalMeter?.denominator || song.timeSignature?.[1] || 4,
+  }), [song.canonicalMeter, song.timeSignature]);
 
-  const visibleHeaderBeats = useMemo(() => {
-    const start = Math.max(0, Math.floor(visibleStartBeat) - 1);
-    const end = Math.min(song.totalBeats - 1, Math.ceil(visibleEndBeat) + 1);
-    const beats: number[] = [];
-    for (let i = start; i <= end; i++) {
-      beats.push(i);
-    }
-    return beats;
-  }, [visibleStartBeat, visibleEndBeat, song.totalBeats]);
+  const timelineMeasures = useMemo(() => {
+    return calculateMeasuresTimeline(
+      song.totalBeats,
+      song.meters && song.meters.length > 0 ? song.meters : undefined,
+      fallbackMeter
+    );
+  }, [song.totalBeats, song.meters, fallbackMeter]);
+
+  const visibleMeasures = useMemo(() => {
+    return timelineMeasures.filter(
+      (m) => m.endQuarter + 1 >= visibleStartBeat && m.startQuarter + 1 <= visibleEndBeat
+    );
+  }, [timelineMeasures, visibleStartBeat, visibleEndBeat]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     setScrollLeft(e.currentTarget.scrollLeft);
@@ -756,25 +771,45 @@ export default function PianoRoll() {
               }}
               title="Haz click para saltar a cualquier compás"
             >
-              {visibleHeaderBeats.map((i) => {
-                const isMeasureStart = i % song.timeSignature[0] === 0;
-                const measureNum = Math.floor(i / song.timeSignature[0]) + 1;
-                const beatInMeasure = (i % song.timeSignature[0]) + 1;
-
+              {visibleMeasures.map((measure) => {
                 return (
-                  <div
-                    key={`th-beat-${i}`}
-                    className="absolute top-0 bottom-0 flex items-center justify-between border-r px-1 text-[10px] font-mono pointer-events-none hover:bg-white/5"
-                    style={{
-                      left: i * pixelsPerBeat,
-                      width: pixelsPerBeat,
-                      borderColor: isMeasureStart ? '#4B5563' : '#1F2937',
-                      background: isMeasureStart ? 'rgba(55, 65, 81, 0.28)' : 'transparent',
-                      color: isMeasureStart ? '#93C5FD' : '#6B7280',
-                    }}
-                  >
-                    <span>{isMeasureStart ? `M${measureNum}` : `.${beatInMeasure}`}</span>
-                  </div>
+                  <React.Fragment key={`th-measure-${measure.measureNumber}`}>
+                    {measure.pulses.map((pulse, pulseIdx) => {
+                      const nextQuarter =
+                        pulseIdx + 1 < measure.pulses.length
+                          ? measure.pulses[pulseIdx + 1].absoluteQuarter
+                          : measure.endQuarter;
+                      const pulseWidth = (nextQuarter - pulse.absoluteQuarter) * pixelsPerBeat;
+                      const isMeasureStart = pulseIdx === 0;
+
+                      return (
+                        <div
+                          key={`th-pulse-${measure.measureNumber}-${pulseIdx}`}
+                          className="absolute top-0 bottom-0 flex items-center justify-between border-r px-1 text-[10px] font-mono pointer-events-none hover:bg-white/5"
+                          style={{
+                            left: pulse.absoluteQuarter * pixelsPerBeat,
+                            width: pulseWidth,
+                            borderColor: isMeasureStart ? (measure.isMeterChange ? '#38BDF8' : '#4B5563') : '#1F2937',
+                            background: isMeasureStart
+                              ? measure.isMeterChange
+                                ? 'rgba(56, 189, 248, 0.15)'
+                                : 'rgba(55, 65, 81, 0.28)'
+                              : 'transparent',
+                            color: isMeasureStart ? (measure.isMeterChange ? '#38BDF8' : '#93C5FD') : '#6B7280',
+                          }}
+                        >
+                          <div className="flex items-center gap-1 overflow-hidden whitespace-nowrap">
+                            <span>{pulse.label}</span>
+                            {isMeasureStart && measure.isMeterChange && (
+                              <span className="px-1 py-0.2 rounded bg-cyan-900/80 text-cyan-200 border border-cyan-500/50 font-bold text-[9px] shadow-sm">
+                                {measure.numerator}/{measure.denominator}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </React.Fragment>
                 );
               })}
 
@@ -833,20 +868,74 @@ export default function PianoRoll() {
                   );
                 })}
 
-                {/* Líneas divisorias de beat y compás VIRTUALIZADAS */}
-                {visibleGridLines.map((i) => {
-                  const isMeasureStart = i % song.timeSignature[0] === 0;
+                {/* Líneas divisorias dinámicas: Compases, Pulsos y Subdivisiones VIRTUALIZADAS */}
+                {visibleMeasures.map((measure) => {
+                  const isLastMeasure = measure.measureNumber === timelineMeasures.length;
                   return (
-                    <div
-                      key={`grid-line-${i}`}
-                      className="absolute top-0 bottom-0 pointer-events-none"
-                      style={{
-                        left: i * pixelsPerBeat,
-                        width: 1,
-                        background: isMeasureStart ? '#4B5563' : '#1E293B',
-                        zIndex: 1,
-                      }}
-                    />
+                    <React.Fragment key={`grid-measure-${measure.measureNumber}`}>
+                      {/* 1. Límite de compás (gruesa / cian si hay cambio métrico) */}
+                      <div
+                        key={`bar-start-${measure.measureNumber}`}
+                        className="absolute top-0 bottom-0 pointer-events-none"
+                        style={{
+                          left: measure.startQuarter * pixelsPerBeat,
+                          width: measure.isMeterChange ? 2 : 1,
+                          background: measure.isMeterChange ? '#38BDF8' : '#4B5563',
+                          zIndex: 2,
+                        }}
+                      />
+
+                      {/* 2. Líneas de pulso (intermedias) */}
+                      {measure.pulses.map((pulse, pIdx) => {
+                        if (pIdx === 0) return null; // pulso 0 coincide con el inicio de compás
+                        return (
+                          <div
+                            key={`pulse-line-${measure.measureNumber}-${pIdx}`}
+                            className="absolute top-0 bottom-0 pointer-events-none"
+                            style={{
+                              left: pulse.absoluteQuarter * pixelsPerBeat,
+                              width: 1,
+                              background: '#2B384E',
+                              zIndex: 1,
+                            }}
+                          />
+                        );
+                      })}
+
+                      {/* 3. Líneas de subdivisión (muy tenues) */}
+                      {measure.subdivisions.map((sub, sIdx) => {
+                        const coincidesWithPulse = measure.pulses.some(
+                          (p) => Math.abs(p.offsetInMeasure - sub.offsetInMeasure) < 0.001
+                        );
+                        if (coincidesWithPulse) return null;
+                        return (
+                          <div
+                            key={`sub-line-${measure.measureNumber}-${sIdx}`}
+                            className="absolute top-0 bottom-0 pointer-events-none"
+                            style={{
+                              left: sub.absoluteQuarter * pixelsPerBeat,
+                              width: 1,
+                              background: '#151C2C',
+                              zIndex: 0,
+                            }}
+                          />
+                        );
+                      })}
+
+                      {/* Límite final para el último compás */}
+                      {isLastMeasure && (
+                        <div
+                          key={`bar-end-${measure.measureNumber}`}
+                          className="absolute top-0 bottom-0 pointer-events-none"
+                          style={{
+                            left: measure.endQuarter * pixelsPerBeat,
+                            width: 1,
+                            background: '#4B5563',
+                            zIndex: 2,
+                          }}
+                        />
+                      )}
+                    </React.Fragment>
                   );
                 })}
 

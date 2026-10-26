@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { UniversalSong, SongSection, KeySignature, ScaleMode } from '../types/music';
 import { SONG_CATALOG, snowMountainSong } from '../data/songs';
 import { resolvePitch, resolveChordVoicing, getTransposedChordSymbol, getKeyAtBeat } from '../utils/theoryEngine';
+import { resolveChordsWithVoiceLeading } from '../utils/voiceLeading';
 import {
   setAudioToggles,
   setupSong,
@@ -14,6 +15,7 @@ import {
   setAudioSustain,
 } from '../audio/audioEngine';
 import { getOptimalTransposeInterval, transposeNoteLetter } from '../utils/musicTheory';
+import { calculateMeasuresTimeline, calculateMeasuresForBarCount } from '../utils/rhythmEngine';
 import type { SectionData } from '../data/snowMountainData';
 import type { ParsedNote, RawNote, RawChord, MusicData } from '../utils/theoryParser';
 
@@ -90,6 +92,7 @@ interface PlayerState {
   setInstrumentType: (type: 'piano' | 'guitar') => void;
 
   setKey: (key: string, mode?: string) => void;
+  setSongKey: (key: { tonic: string; scale?: string }) => void;
   setSwing: (enabled: boolean, amount?: number, subdivision?: '8n' | '16n') => void;
   setTransposeOptions: (options: {
     transposeMode?: 'parallel' | 'relative';
@@ -119,7 +122,19 @@ function resolveSectionData(
   };
 
   const melodyNotes = section.notes || section.melody || [];
-  const beatsPerBar = section.beatsPerBar || section.meter?.beats || 4;
+  const numerator = section.canonicalMeter?.numerator
+    || section.meters?.[0]?.numerator
+    || section.timeSignature?.[0]
+    || section.beatsPerBar
+    || section.meter?.beats
+    || 4;
+  const denominator = section.canonicalMeter?.denominator
+    || section.meters?.[0]?.denominator
+    || section.timeSignature?.[1]
+    || section.meter?.beatUnit
+    || 4;
+  const beatsPerBar = numerator;
+  const beatUnit = denominator;
 
   const resolvedMelody: ParsedNote[] = melodyNotes.map((note) => {
     const noteKey = getKeyForBeat(note.beat);
@@ -148,10 +163,16 @@ function resolveSectionData(
     };
   });
 
-  const resolvedChords: RawChord[] = section.chords.map((chord) => {
+  const effectiveBaseOctave = 3 + chordsOctaveShift;
+  const voiceLedChords = resolveChordsWithVoiceLeading(
+    section.chords,
+    (beat) => getKeyForBeat(beat),
+    effectiveBaseOctave
+  );
+
+  const resolvedChords: RawChord[] = section.chords.map((chord, idx) => {
     const chordKey = getKeyForBeat(chord.beat);
-    const effectiveBaseOctave = 3 + chordsOctaveShift;
-    const res = resolveChordVoicing(chord, chordKey, effectiveBaseOctave);
+    const res = voiceLedChords[idx] || resolveChordVoicing(chord, chordKey, effectiveBaseOctave);
     const dynamicSymbol = getTransposedChordSymbol(chord, chordKey);
     return {
       ...chord,
@@ -160,6 +181,7 @@ function resolveSectionData(
       roman: chord.roman,
       symbol: dynamicSymbol || res.symbol || chord.symbol,
       root: chord.rootSd || (chord as any).root,
+      type: chord.type,
       quality: chord.quality as unknown as number,
       inversion: chord.inversion,
       borrowed: chord.borrowed,
@@ -179,15 +201,32 @@ function resolveSectionData(
     };
   });
 
-  // Determinar compases totales exactos del contenido para evitar compases vacíos residuales
+  // Determinar compases totales exactos del contenido considerando cambios de compás
   const lastNoteEnd = resolvedMelody.reduce((max, n) => Math.max(max, n.beat + n.duration), 1);
   const lastChordEnd = resolvedChords.reduce((max, c) => Math.max(max, c.beat + c.duration), 1);
   const absoluteEndBeat = Math.max(lastNoteEnd, lastChordEnd);
-  const contentBars = Math.max(1, Math.ceil((absoluteEndBeat - 1) / beatsPerBar));
+  const absoluteEndQuarter = Math.max(0, absoluteEndBeat - 1);
+
+  const fallbackMeter = {
+    numerator: beatsPerBar,
+    denominator: beatUnit,
+  };
+
+  const contentMeasures = calculateMeasuresTimeline(
+    absoluteEndQuarter,
+    section.meters && section.meters.length > 0 ? section.meters : undefined,
+    fallbackMeter
+  );
+  const contentBars = Math.max(1, contentMeasures.length);
   const configuredBars = section.totalBars || section.totalMeasures || contentBars;
-  const effectiveBars = (configuredBars > contentBars && absoluteEndBeat <= (contentBars * beatsPerBar + 1))
-    ? contentBars
-    : configuredBars;
+  const effectiveBars = Math.max(contentBars, configuredBars);
+
+  const effectiveMeasures = calculateMeasuresForBarCount(
+    effectiveBars,
+    section.meters && section.meters.length > 0 ? section.meters : undefined,
+    fallbackMeter
+  );
+  const totalBeats = effectiveMeasures.reduce((sum, m) => sum + m.durationQuarters, 0);
 
   const sectionData: SectionData = {
     id: section.id,
@@ -195,8 +234,11 @@ function resolveSectionData(
     title: `${song.title} - ${section.name}`,
     artist: song.artist,
     bpm: section.bpm || song.bpm,
-    timeSignature: [beatsPerBar, section.meter?.beatUnit || 4],
-    totalBeats: effectiveBars * beatsPerBar,
+    timeSignature: [beatsPerBar, beatUnit],
+    canonicalMeter: section.canonicalMeter,
+    meters: section.meters,
+    hasExplicitMeters: section.hasExplicitMeters,
+    totalBeats,
     keys: section.keys && section.keys.length > 0 ? section.keys : [{ beat: 1, scale: effectiveKey.scale, tonic: effectiveKey.tonic }],
     notes: resolvedMelody as unknown as RawNote[],
     chords: resolvedChords,
@@ -482,7 +524,19 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   addSection: (newSection: SongSection) => {
     const { currentSong } = get();
     const melody = newSection.notes || newSection.melody || [];
-    const beatsPerBar = newSection.beatsPerBar || newSection.meter?.beats || 4;
+    const numerator = newSection.canonicalMeter?.numerator
+      || newSection.meters?.[0]?.numerator
+      || newSection.timeSignature?.[0]
+      || newSection.beatsPerBar
+      || newSection.meter?.beats
+      || 4;
+    const denominator = newSection.canonicalMeter?.denominator
+      || newSection.meters?.[0]?.denominator
+      || newSection.timeSignature?.[1]
+      || newSection.meter?.beatUnit
+      || 4;
+    const beatsPerBar = numerator;
+    const beatUnit = denominator;
     const totalBars = newSection.totalBars || newSection.totalMeasures || 4;
 
     const formattedSection: SongSection = {
@@ -490,7 +544,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       melody,
       notes: melody,
       beatsPerBar,
-      meter: newSection.meter || { beats: beatsPerBar, beatUnit: 4 },
+      timeSignature: newSection.timeSignature || [beatsPerBar, beatUnit],
+      canonicalMeter: newSection.canonicalMeter,
+      meter: newSection.meter || { beats: beatsPerBar, beatUnit },
+      meters: newSection.meters,
+      hasExplicitMeters: newSection.hasExplicitMeters,
       totalBars,
       totalMeasures: totalBars,
     };
@@ -649,6 +707,29 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       song: sectionData,
       parsedNotes,
     });
+  },
+
+  setSongKey: ({ tonic, scale = 'major' }) => {
+    const { currentSong, currentSectionId } = get();
+    const targetScale = (scale || 'major') as ScaleMode;
+    const updatedSections = currentSong.sections.map((sec) => {
+      if (sec.id === currentSectionId) {
+        return { ...sec, key: { tonic, scale: targetScale } };
+      }
+      return sec;
+    });
+    const updatedSong: UniversalSong = {
+      ...currentSong,
+      globalKey: { tonic, scale: targetScale },
+      sections: updatedSections,
+    };
+    set({
+      currentSong: updatedSong,
+      currentKey: tonic,
+      keyMode: targetScale,
+    });
+    get().setKey(tonic, targetScale);
+    saveProjectToStorage(updatedSong, currentSectionId);
   },
 
   setSwing: (enabled, amount = 67, subdivision = '8n') => {

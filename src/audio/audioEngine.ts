@@ -104,6 +104,7 @@ export const fallbackSynth: Tone.PolySynth = isBrowser
 
 let melodyPart: Tone.Part | null = null;
 let chordPart: Tone.Part | null = null;
+let currentSongData: MusicData | null = null;
 let tickCallback: ((beat: number) => void) | null = null;
 let noteOnCallback: ((midi: number) => void) | null = null;
 let noteOffCallback: ((midi: number) => void) | null = null;
@@ -165,6 +166,7 @@ export function setupSong(
   if (!isBrowser) return;
   if (!initialized) initAudio();
 
+  currentSongData = song;
   tickCallback = onTick;
   noteOnCallback = onNoteOn;
   noteOffCallback = onNoteOff;
@@ -185,15 +187,16 @@ export function setupSong(
   Tone.getTransport().bpm.value = song.bpm;
   Tone.getTransport().timeSignature = song.timeSignature;
   Tone.getTransport().loop = true;
-  Tone.getTransport().loopStart = '0:0:0';
+  Tone.getTransport().loopStart = 0;
 
-  const totalMeasures = song.totalBeats / song.timeSignature[0];
-  Tone.getTransport().loopEnd = `${totalMeasures}:0:0`;
+  const totalDurationSeconds = song.totalBeats * (60 / song.bpm);
+  Tone.getTransport().loopEnd = totalDurationSeconds;
 
-  // 1. Part de Melodía programada en tiempo musical con velocity 0.82 y release natural
+  // 1. Part de Melodía programada con segundos absolutos desacoplados de compás y subdivisión
   const melodyEvents = notes.map((note, index) => {
+    const timeSeconds = (note.beat - 1) * (60 / song.bpm);
     return {
-      time: beatToPositionString(note.beat - 1, song.timeSignature[0]),
+      time: timeSeconds,
       index,
       duration: note.duration,
     };
@@ -204,7 +207,7 @@ export function setupSong(
     if (!currentNote) return;
 
     const bpmNow = Tone.getTransport().bpm.value;
-    const durSecs = (60 / bpmNow) * event.duration * (isSustainActive ? 1.05 : 0.85);
+    const durSecs = (60 / bpmNow) * event.duration * (isSustainActive ? 1.05 : 1.0);
     const soundingMidi = currentNote.midi;
     const noteToPlay = currentNote.name || Tone.Frequency(soundingMidi, 'midi').toNote();
     const velocity = 0.82; // Expresividad de melodía principal en piano acústico
@@ -226,13 +229,14 @@ export function setupSong(
 
   // 2. Part de Acordes programada con soporte de pedal de sustain y liberación controlada
   const chordEvents = song.chords.map((chord, index) => {
+    const timeSeconds = (chord.beat - 1) * (60 / song.bpm);
     const nextChord = song.chords[index + 1];
     const sustainDuration = nextChord
       ? Math.max(chord.duration, nextChord.beat - chord.beat)
-      : chord.duration * 1.25;
+      : chord.duration;
 
     return {
-      time: beatToPositionString(chord.beat - 1, song.timeSignature[0]),
+      time: timeSeconds,
       index,
       duration: chord.duration,
       sustainDuration,
@@ -244,7 +248,7 @@ export function setupSong(
     if (!currentChord) return;
 
     const bpmNow = Tone.getTransport().bpm.value;
-    const effectiveBeats = isSustainActive ? event.sustainDuration : event.duration * 0.9;
+    const effectiveBeats = isSustainActive ? event.sustainDuration : event.duration;
     const durSecs = (60 / bpmNow) * effectiveBeats;
     const soundingMidis = currentChord.midiNotes ?? [currentChord.rootMidi ?? 60];
     const minMidi = Math.min(...soundingMidis);
@@ -304,36 +308,35 @@ export function stopTransport() {
 export function setBpm(bpm: number) {
   if (!isBrowser) return;
   Tone.getTransport().bpm.value = bpm;
+  if (currentSongData) {
+    Tone.getTransport().loopEnd = currentSongData.totalBeats * (60 / bpm);
+  }
 }
 
 let currentSeekBeat = 1;
 
 /**
  * Obtiene el beat exacto actual de reproducción directamente desde Tone.Transport
+ * Desacoplado de compás y basado en la unidad canónica de segundos a negras según BPM.
  */
 export function getCurrentExactBeat(): number {
   if (!isBrowser || Tone.getTransport().state !== 'started') {
     return currentSeekBeat;
   }
-  const posStr = Tone.getTransport().position.toString();
-  const parts = posStr.split(':');
-  if (parts.length >= 3) {
-    const bars = parseFloat(parts[0]) || 0;
-    const quarters = parseFloat(parts[1]) || 0;
-    const sixteenths = parseFloat(parts[2]) || 0;
-    return 1 + bars * 4 + quarters + sixteenths / 4;
-  }
-  return currentSeekBeat;
+  const bpm = Tone.getTransport().bpm.value || 120;
+  return 1 + (Tone.getTransport().seconds * (bpm / 60));
 }
 
 /**
  * Seeking exacto en unidades musicales de compás y beat
+ * Desacoplado de agrupaciones de compás y basado estrictamente en segundos continuos.
  */
 export function seekToBeat(newBeat: number) {
   const safeBeat = Math.max(1, newBeat);
   currentSeekBeat = safeBeat;
   if (isBrowser) {
-    Tone.getTransport().position = beatToPositionString(safeBeat - 1, 4);
+    const bpm = Tone.getTransport().bpm.value || 120;
+    Tone.getTransport().seconds = (safeBeat - 1) * (60 / bpm);
   }
   tickCallback?.(safeBeat);
 }

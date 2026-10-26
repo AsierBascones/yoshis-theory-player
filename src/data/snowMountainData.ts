@@ -6,6 +6,7 @@
  */
 
 import type { RawChord, RawNote } from '../utils/theoryParser';
+import type { MeterChange, CanonicalMeter } from '../types/music';
 
 export interface SectionData {
   id: string;
@@ -14,6 +15,9 @@ export interface SectionData {
   artist: string;
   bpm: number;
   timeSignature: [number, number];
+  canonicalMeter?: CanonicalMeter;
+  meters?: MeterChange[];
+  hasExplicitMeters?: boolean;
   totalBeats: number;
   key?: { tonic: string; scale: string };
   keys: { beat: number; scale: string; tonic: string }[];

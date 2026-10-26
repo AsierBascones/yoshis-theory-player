@@ -21,7 +21,7 @@ const SECTION_TYPE_CONFIG: { type: SectionType; label: string; icon: string; col
 ];
 
 export default function ImportSectionModal({ isOpen, onClose, initialJson = '' }: ImportSectionModalProps) {
-  const { currentSong, currentSectionId, addSection, updateSection } = usePlayerStore();
+  const { currentSong, currentSectionId, addSection, updateSection, setSongKey } = usePlayerStore();
   const currentSection = currentSong.sections.find((s) => s.id === currentSectionId) || currentSong.sections[0];
 
   const [rawJson, setRawJson] = useState<string>('');
@@ -116,11 +116,16 @@ export default function ImportSectionModal({ isOpen, onClose, initialJson = '' }
           type: sectionType,
           defaultBpm: currentSong.bpm,
         });
+        const meterUnit = sec.meter?.beatUnit || 4;
+        const meterLabel = sec.meters && sec.meters.length > 1
+          ? `${sec.beatsPerBar}/${meterUnit} (+${sec.meters.length - 1})`
+          : `${sec.beatsPerBar}/${meterUnit}`;
+
         return {
           valid: true,
           beats: sec.totalBars * sec.beatsPerBar,
           bars: sec.totalBars,
-          meter: `${sec.beatsPerBar}/4`,
+          meter: meterLabel,
           bpm: sec.bpm || currentSong.bpm,
           key: `${sec.key.tonic} ${sec.key.scale}`,
           notesCount: sec.melody.length || notesCount,
@@ -129,6 +134,7 @@ export default function ImportSectionModal({ isOpen, onClose, initialJson = '' }
       } catch {
         const meter = parsedJson.meter || parsedJson.modern?.payload?.meter || [4, 4];
         const beatsPerBar = Array.isArray(meter) ? meter[0] || 4 : 4;
+        const beatUnit = Array.isArray(meter) ? meter[1] || 4 : 4;
         const keyTonic = parsedJson.key?.tonic || parsedJson.modern?.payload?.key?.tonic || 'C';
         const keyScale = parsedJson.key?.scale || parsedJson.modern?.payload?.key?.scale || 'major';
         const bpm = parsedJson.bpm || parsedJson.modern?.payload?.bpm || currentSong.bpm || 120;
@@ -136,7 +142,7 @@ export default function ImportSectionModal({ isOpen, onClose, initialJson = '' }
           valid: true,
           beats: 16,
           bars: 4,
-          meter: `${beatsPerBar}/4`,
+          meter: `${beatsPerBar}/${beatUnit}`,
           bpm,
           key: `${keyTonic} ${keyScale}`,
           notesCount,
@@ -160,6 +166,14 @@ export default function ImportSectionModal({ isOpen, onClose, initialJson = '' }
         defaultBpm: currentSong.bpm,
       });
 
+      let parsedJson: any = null;
+      try {
+        parsedJson = JSON.parse(rawJson.trim());
+      } catch {}
+      const detectedKey = parsedJson?.keys?.[0] || parsedJson?.modern?.payload?.keys?.[0] || newSection.key;
+      const tonic = detectedKey?.tonic || newSection.key?.tonic || "C";
+      const scale = detectedKey?.scale || newSection.key?.scale || "major";
+
       if (destination === 'add') {
         addSection(newSection);
       } else {
@@ -174,9 +188,16 @@ export default function ImportSectionModal({ isOpen, onClose, initialJson = '' }
           key: newSection.key,
           bpm: newSection.bpm,
           beatsPerBar: newSection.beatsPerBar,
+          timeSignature: newSection.timeSignature,
+          canonicalMeter: newSection.canonicalMeter,
           meter: newSection.meter,
+          meters: newSection.meters,
+          hasExplicitMeters: newSection.hasExplicitMeters,
         });
       }
+
+      // Asignar obligatoriamente al estado del reproductor:
+      setSongKey({ tonic, scale });
 
       onClose();
     } catch (err) {

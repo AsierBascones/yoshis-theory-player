@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useMemo } from 'react';
 import usePlayerStore from '../../store/usePlayerStore';
 import { playTransport, pauseTransport, stopTransport, seekToBeat } from '../../audio/audioEngine';
 import { SCALE_MODES } from '../../utils/musicTheory';
+import { getPositionInMeasures } from '../../utils/rhythmEngine';
 import TempoSwingPopover from './TempoSwingPopover';
 import KeyTransposePopover from './KeyTransposePopover';
 import MidiImportModal from './MidiImportModal';
@@ -66,9 +67,22 @@ export default function TransportBar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const safeBeat = Math.max(1, Math.min(currentBeat, song.totalBeats));
-  const measure = Math.floor((safeBeat - 1) / song.timeSignature[0]) + 1;
-  const beatInMeasure = Math.floor((safeBeat - 1) % song.timeSignature[0]) + 1;
-  const totalMeasures = song.totalBeats / song.timeSignature[0];
+  const fallbackMeter = useMemo(() => ({
+    numerator: song.canonicalMeter?.numerator || song.timeSignature?.[0] || 4,
+    denominator: song.canonicalMeter?.denominator || song.timeSignature?.[1] || 4,
+  }), [song.canonicalMeter, song.timeSignature]);
+
+  const pos = useMemo(() => {
+    return getPositionInMeasures(safeBeat - 1, song.totalBeats, song.meters, fallbackMeter);
+  }, [safeBeat, song.totalBeats, song.meters, fallbackMeter]);
+
+  const measure = pos.measureNumber;
+  const beatInMeasure = pos.beatInMeasure;
+  const totalMeasures = pos.totalMeasures;
+  const activeMeter = pos.activeMeter;
+  const meterText = song.meters && song.meters.length > 1
+    ? `${activeMeter.numerator}/${activeMeter.denominator} (+${song.meters.length - 1})`
+    : `${activeMeter.numerator}/${activeMeter.denominator}`;
 
   const handlePlayPause = useCallback(async () => {
     if (isPlaying) {
@@ -218,7 +232,7 @@ export default function TransportBar() {
               </span>
             </h1>
             <p className="text-[11px] text-gray-400">
-              {song.artist} &middot; Tempo: {bpm} BPM &middot; Tonalidad: {keyDisplay} &middot; Compás 4/4
+              {song.artist} &middot; Tempo: {bpm} BPM &middot; Tonalidad: {keyDisplay} &middot; Compás {meterText}
             </p>
           </div>
         </div>

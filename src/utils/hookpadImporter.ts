@@ -4,10 +4,18 @@
  * Formato JSON con arrays 'notes' y 'chords' en grados relativos (sd).
  */
 
-import type { UniversalSong, UniversalMelodyNote, UniversalChord, ScaleMode, SongSection, SectionType, KeyChange } from '../types/music';
+import type { UniversalSong, UniversalMelodyNote, UniversalChord, ScaleMode, SongSection, SectionType, KeyChange, MeterChange, CanonicalMeter } from '../types/music';
 import { parseHookpadChord, getKeyAtBeat, normalizeKey } from './theoryEngine';
+import {
+  TICKS_PER_QUARTER,
+  normalizeEventTiming,
+  normalizeMeterChange,
+  calculateMeasuresTimeline,
+  resolveUniversalMeter,
+  createCanonicalMeter,
+} from './rhythmEngine';
 
-export const TICKS_PER_BEAT = 480; // Hooktheory PPQ estándar (1 compás 4/4 = 1920 ticks)
+export const TICKS_PER_BEAT = TICKS_PER_QUARTER; // Hooktheory PPQ estándar (480 ticks = 1 negra)
 
 export function isHookpadJson(text: string): boolean {
   if (!text || typeof text !== 'string') return false;
@@ -64,14 +72,45 @@ export function parseHookpadSection(
     ? options.defaultBpm
     : (data.bpm || data.tempo || rootData.bpm || rootData.tempo || 120);
   const bpm = data.bpm || data.tempo || activeBpm;
-  const meter = data.meter || data.timeSignature || rootData.meter || rootData.timeSignature || [4, 4];
-  const beatsPerBar = Array.isArray(meter) ? meter[0] || 4 : 4;
+
+  const rawNotes: any[] = Array.isArray(data.notes)
+    ? data.notes
+    : (!isModern && Array.isArray(rootData.notes) ? rootData.notes : []);
+
+  const rawChords: any[] = Array.isArray(data.chords)
+    ? data.chords
+    : (!isModern && Array.isArray(rootData.chords) ? rootData.chords : []);
+
+  const resolution = typeof data.ppq === 'number' && data.ppq > 0
+    ? data.ppq
+    : (typeof rootData.ppq === 'number' && rootData.ppq > 0 ? rootData.ppq : TICKS_PER_BEAT);
+
+  // Extracción e inferencia métrica universal (metadatos explícitos prevalecen; inferencia si ausente)
+  const resolvedMetric = resolveUniversalMeter(
+    { ...rootData, ...data },
+    rawChords,
+    rawNotes,
+    undefined,
+    resolution
+  );
+
+  const primaryMeter = resolvedMetric.primaryMeter;
+  const metersList = resolvedMetric.meters;
+  const hasExplicitMeters = primaryMeter.provenance === 'explicit';
+  const beatsPerBar = primaryMeter.numerator;
+  const beatUnit = primaryMeter.denominator;
+
+  const detectedKeyObj = (Array.isArray(rootData.keys) && rootData.keys[0]) ||
+    (Array.isArray(rootData.modern?.payload?.keys) && rootData.modern.payload.keys[0]) ||
+    (Array.isArray(data.keys) && data.keys[0]) ||
+    rootData.key ||
+    data.key;
 
   let keyTonic = 'C';
   let rawScale = 'major';
 
-  if (typeof data.key === 'string') {
-    const keyMatch = data.key.replace(/^KEY:\s*/i, '').trim().match(/^([A-Ga-g][#b]?)\s*(.*)$/);
+  if (typeof detectedKeyObj === 'string') {
+    const keyMatch = detectedKeyObj.replace(/^KEY:\s*/i, '').trim().match(/^([A-Ga-g][#b]?)\s*(.*)$/);
     if (keyMatch) {
       keyTonic = keyMatch[1];
       const scalePart = keyMatch[2].toLowerCase();
@@ -84,20 +123,14 @@ export function parseHookpadSection(
       else if (scalePart.includes('loc')) rawScale = 'locrian';
       else if (scalePart.includes('maj') || scalePart.includes('ion')) rawScale = 'major';
     } else {
-      keyTonic = data.key;
+      keyTonic = detectedKeyObj;
     }
-  } else if (data.key && typeof data.key === 'object') {
-    keyTonic = data.key.tonic || 'C';
-    rawScale = data.key.scale || data.key.mode || data.scale || data.mode || 'major';
-  } else if (Array.isArray(data.keys) && data.keys[0]) {
-    keyTonic = data.keys[0].tonic || 'C';
-    rawScale = data.keys[0].scale || data.keys[0].mode || 'major';
-  } else if (rootData.key && typeof rootData.key === 'object') {
-    keyTonic = rootData.key.tonic || 'C';
-    rawScale = rootData.key.scale || rootData.key.mode || rootData.scale || rootData.mode || 'major';
+  } else if (detectedKeyObj && typeof detectedKeyObj === 'object') {
+    keyTonic = detectedKeyObj.tonic || detectedKeyObj.key || rootData.tonic || data.tonic || 'C';
+    rawScale = detectedKeyObj.scale || detectedKeyObj.mode || rootData.scale || data.scale || 'major';
   } else {
-    keyTonic = data.tonic || rootData.tonic || 'C';
-    rawScale = data.scale || data.mode || rootData.scale || rootData.mode || 'major';
+    keyTonic = rootData.tonic || data.tonic || 'C';
+    rawScale = rootData.scale || data.scale || rootData.mode || data.mode || 'major';
   }
 
   const normalizedScaleStr = String(rawScale).toLowerCase();
@@ -113,20 +146,23 @@ export function parseHookpadSection(
   ) as ScaleMode;
 
   // Extracción robusta de modulación en línea de tiempo (keys: KeyChange[])
-  const rawKeys = Array.isArray(data.keys)
+  const rawKeys = (Array.isArray(data.keys) && data.keys.length > 0)
     ? data.keys
-    : (!isModern && Array.isArray(rootData.keys) ? rootData.keys : []);
+    : (Array.isArray(rootData.keys) && rootData.keys.length > 0)
+      ? rootData.keys
+      : (Array.isArray(rootData.modern?.payload?.keys) && rootData.modern.payload.keys.length > 0)
+        ? rootData.modern.payload.keys
+        : [];
 
   let keysList: KeyChange[] = [];
   if (rawKeys.length > 0) {
     keysList = rawKeys.map((k: any) => {
       let beat = 1;
-      if (isModern && typeof k.startTick === 'number') {
-        beat = (k.startTick / TICKS_PER_BEAT) + 1;
-      } else if (isModern && typeof k.tick === 'number') {
-        beat = (k.tick / TICKS_PER_BEAT) + 1;
+      if (isModern || typeof k.startTick === 'number') {
+        const timing = normalizeEventTiming(k, 1, resolution);
+        beat = timing.beat;
       } else if (typeof k.beat === 'number') {
-        beat = isModern && k.beat >= 240 ? (k.beat / TICKS_PER_BEAT) + 1 : k.beat;
+        beat = k.beat;
       }
 
       const tonic = k.tonic || keyTonic || 'C';
@@ -147,10 +183,7 @@ export function parseHookpadSection(
     keyScale = keysList[0].scale as ScaleMode;
   }
 
-  // 1. Mapeo de notas melódicas relativas con soporte de ticks a beats
-  const rawNotes: any[] = Array.isArray(data.notes)
-    ? data.notes
-    : (!isModern && Array.isArray(rootData.notes) ? rootData.notes : []);
+  // 1. Mapeo de notas melódicas relativas con soporte de ticks a beats canónicos
   const melodyNotes: UniversalMelodyNote[] = [];
 
   rawNotes.forEach((n, idx) => {
@@ -159,28 +192,10 @@ export function parseHookpadSection(
     let beat: number;
     let duration: number;
 
-    if (isModern) {
-      if (typeof n.startTick === 'number') {
-        beat = (n.startTick / TICKS_PER_BEAT) + 1;
-      } else if (typeof n.tick === 'number') {
-        beat = (n.tick / TICKS_PER_BEAT) + 1;
-      } else if (typeof n.beat === 'number') {
-        beat = n.beat >= 240 ? (n.beat / TICKS_PER_BEAT) + 1 : n.beat;
-      } else {
-        beat = 1;
-      }
-
-      if (typeof n.durationTicks === 'number') {
-        duration = n.durationTicks / TICKS_PER_BEAT;
-      } else if (typeof n.duration_ticks === 'number') {
-        duration = n.duration_ticks / TICKS_PER_BEAT;
-      } else if (typeof n.ticks === 'number') {
-        duration = n.ticks / TICKS_PER_BEAT;
-      } else if (typeof n.duration === 'number') {
-        duration = n.duration >= 240 ? n.duration / TICKS_PER_BEAT : n.duration;
-      } else {
-        duration = 1;
-      }
+    if (isModern || typeof n.startTick === 'number' || typeof n.durationTicks === 'number') {
+      const timing = normalizeEventTiming(n, 1, resolution);
+      beat = timing.beat;
+      duration = timing.duration;
     } else {
       beat = typeof n.beat === 'number' ? n.beat : 1;
       duration = typeof n.duration === 'number' ? n.duration : 1;
@@ -203,9 +218,6 @@ export function parseHookpadSection(
   });
 
   // 2. Mapeo de acordes relativos con parseHookpadChord estricto y soporte de ticks
-  const rawChords: any[] = Array.isArray(data.chords)
-    ? data.chords
-    : (!isModern && Array.isArray(rootData.chords) ? rootData.chords : []);
   const chords: UniversalChord[] = [];
 
   rawChords.forEach((c, idx) => {
@@ -226,28 +238,10 @@ export function parseHookpadSection(
     let beat: number;
     let duration: number;
 
-    if (isModern) {
-      if (typeof c.startTick === 'number') {
-        beat = (c.startTick / TICKS_PER_BEAT) + 1;
-      } else if (typeof c.tick === 'number') {
-        beat = (c.tick / TICKS_PER_BEAT) + 1;
-      } else if (typeof c.beat === 'number') {
-        beat = c.beat >= 240 ? (c.beat / TICKS_PER_BEAT) + 1 : c.beat;
-      } else {
-        beat = idx * beatsPerBar + 1;
-      }
-
-      if (typeof c.durationTicks === 'number') {
-        duration = c.durationTicks / TICKS_PER_BEAT;
-      } else if (typeof c.duration_ticks === 'number') {
-        duration = c.duration_ticks / TICKS_PER_BEAT;
-      } else if (typeof c.ticks === 'number') {
-        duration = c.ticks / TICKS_PER_BEAT;
-      } else if (typeof c.duration === 'number') {
-        duration = c.duration >= 240 ? c.duration / TICKS_PER_BEAT : c.duration;
-      } else {
-        duration = beatsPerBar;
-      }
+    if (isModern || typeof c.startTick === 'number' || typeof c.durationTicks === 'number') {
+      const timing = normalizeEventTiming(c, beatsPerBar, resolution);
+      beat = typeof c.startTick === 'number' ? timing.beat : (typeof c.beat === 'number' ? timing.beat : idx * beatsPerBar + 1);
+      duration = timing.duration;
     } else {
       beat = typeof c.beat === 'number' ? c.beat : (idx * beatsPerBar + 1);
       duration = typeof c.duration === 'number' ? c.duration : beatsPerBar;
@@ -274,9 +268,14 @@ export function parseHookpadSection(
   const lastChordEnd = chords.reduce((max, c) => Math.max(max, c.beat + c.duration), 1);
   const absoluteEndBeat = Math.max(lastNoteEnd, lastChordEnd);
 
-  // Si una canción de 8 compases en 4/4 termina en el beat 33 (final del beat 32),
-  // debe tener exactamente 8 compases, NO 9.
-  const totalBars = Math.max(1, Math.ceil((absoluteEndBeat - 1) / beatsPerBar));
+  // Calcular compases reales considerando cambios de compás
+  const absoluteEndQuarter = Math.max(0, absoluteEndBeat - 1);
+  const measures = calculateMeasuresTimeline(
+    absoluteEndQuarter,
+    metersList,
+    { numerator: beatsPerBar, denominator: beatUnit }
+  );
+  const totalBars = Math.max(1, measures.length);
 
   const sectionName = options?.name || data.sectionName || data.name || data.title || rootData.sectionName || rootData.name || rootData.title || 'Section';
   const sectionType = options?.type || inferSectionTypeFromName(sectionName);
@@ -286,7 +285,11 @@ export function parseHookpadSection(
     id: sectionId,
     name: sectionName,
     type: sectionType,
-    meter: { beats: beatsPerBar, beatUnit: 4 },
+    meter: { beats: beatsPerBar, beatUnit },
+    timeSignature: [beatsPerBar, beatUnit],
+    canonicalMeter: primaryMeter,
+    meters: metersList,
+    hasExplicitMeters,
     bpm,
     key: { tonic: keyTonic, scale: keyScale },
     keys: keysList,
@@ -312,6 +315,9 @@ export function parseHookpadJson(text: string, defaultBpm?: number): UniversalSo
     title: data.title || 'Clip de Hookpad',
     artist: data.artist || 'Hookpad Export',
     bpm: section.bpm || 120,
+    timeSignature: section.timeSignature || [section.beatsPerBar, 4],
+    canonicalMeter: section.canonicalMeter,
+    meters: section.meters,
     defaultSwing: {
       enabled: Boolean(data.swing || data.defaultSwing?.enabled),
       percentage: data.swingAmount || data.defaultSwing?.percentage || 67,

@@ -108,32 +108,47 @@ export default function ChordAnalysisBar() {
               ? `repeating-linear-gradient(45deg, ${chordColor}60, ${chordColor}60 6px, rgba(0, 0, 0, 0.4) 6px, rgba(0, 0, 0, 0.4) 12px)`
               : getHexAlpha(chordColor, 0.38);
 
+            const isCompact = width < 45;
+            let displayRoman = (chord.roman || '').replace(/\^/g, '');
+            if (isCompact) {
+              displayRoman = displayRoman.replace(/\s*\([^)]*\)/g, '');
+            }
+
             return (
               <div
                 key={`chord-abs-${idx}`}
                 onClick={() => handleChordClick(chordNotes, chord.beat)}
                 title={`Tocar acorde ${displaySymbol} (${chord.roman}) - [${chordNotes.join(', ')}]`}
-                className="absolute top-0 bottom-0 border-r border-gray-900/60 flex flex-col items-center justify-center font-bold cursor-pointer hover:brightness-125 transition-all select-none"
+                className="absolute top-0 bottom-0 border-r border-gray-900/60 font-bold cursor-pointer hover:brightness-125 transition-all select-none"
                 style={{
                   left: `${left}px`,
                   width: `${width}px`,
                   background: isActive ? activeBg : normalBg,
                   borderTop: `4px solid ${chordColor}`,
                   boxShadow: isActive ? `inset 0 0 12px ${getHexAlpha(chordColor, 0.4)}` : 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  minWidth: 0,
+                  padding: '0 2px',
                 }}
               >
                 <span
-                  className="text-sm font-serif drop-shadow-sm font-bold tracking-tight leading-tight"
+                  className={`${isCompact ? 'text-[9px]' : 'text-xs md:text-sm'} font-serif drop-shadow-sm font-bold tracking-tight leading-tight w-full text-center truncate`}
                   style={{ color: chordColor }}
                 >
-                  {chord.roman}
+                  {displayRoman}
                 </span>
-                {chord.sublabel && !chord.roman?.includes(chord.sublabel) && (
-                  <span className="text-[10px] text-gray-300 font-sans font-medium leading-tight">
+                {!isCompact && chord.sublabel && !displayRoman.includes(chord.sublabel) && (
+                  <span className="text-[9px] text-gray-300 font-sans font-medium leading-tight w-full text-center truncate">
                     {chord.sublabel}
                   </span>
                 )}
-                <span className={`text-[10px] leading-tight ${isActive ? 'text-gray-200 font-semibold' : 'text-gray-400'}`}>
+                <span className={`text-[9px] md:text-[10px] leading-tight w-full text-center truncate ${isActive ? 'text-gray-200 font-semibold' : 'text-gray-400'}`}>
                   {displaySymbol}
                 </span>
               </div>

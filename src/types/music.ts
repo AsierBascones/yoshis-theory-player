@@ -27,6 +27,39 @@ export interface KeyChange {
   tonic: string;
 }
 
+export interface TimeSignature {
+  numerator: number;        // Numerador (ej. 4, 3, 6, 9, 12)
+  denominator: number;      // Denominador (ej. 4, 8)
+  startQuarter: number;     // Posición de inicio en negras canónicas (0 = inicio del compás 1)
+  beat?: number;            // Posición de inicio en beat base 1 (startQuarter + 1)
+  startTick?: number;       // Posición en ticks (startQuarter * 480)
+}
+
+export type MeterChange = TimeSignature;
+
+export type MetricProvenance = 'explicit' | 'inferred' | 'fallback';
+export type MetricAmbiguity = 'none' | 'low' | 'medium' | 'high' | 'ambiguous';
+export type MeterType = 'simple' | 'compound' | 'irregular' | 'additive';
+
+export interface CanonicalMeter {
+  numerator: number;              // ej. 2, 3, 4, 5, 6, 7, 9, 12...
+  denominator: number;            // ej. 4, 8, 2, 16...
+  durationQuarters: number;       // Longitud del compás en negras canónicas: (numerator / denominator) * 4
+  pulsesPerMeasure: number;       // Pulsos principales de metrónomo (ej. 6/8 -> 2 pulsos; 4/4 -> 4; 9/8 -> 3; 12/8 -> 4; 5/4 -> 5)
+  pulseDurationQuarters: number;  // Duración típica de pulso (ej. 4/4 -> 1.0; 6/8 -> 1.5)
+  subdivisionsPerMeasure: number; // Subdivisiones típicas (ej. 4/4 -> 8; 6/8 -> 6; 12/8 -> 12)
+  type: MeterType;                // 'simple' | 'compound' | 'irregular' | 'additive'
+  pulseGrouping?: number[];       // ej. [3, 2] o [2, 3] para 5/8; [3, 3] para 6/8
+  startQuarter: number;           // Posición donde entra este compás (0 = inicio)
+  beat: number;                   // startQuarter + 1
+  startTick?: number;
+  label: string;                  // "4/4", "3/4", "6/8", etc.
+  provenance: MetricProvenance;   // 'explicit' | 'inferred' | 'fallback'
+  ambiguity: MetricAmbiguity;     // 'none' | 'low' | 'medium' | 'high' | 'ambiguous'
+  confidence: number;             // 0.0 a 1.0
+  inferenceRationale?: string;    // Explicación de cómo se dedujo
+}
+
 export interface UniversalMelodyNote {
   id: string;
   beat: number;         // Beat de inicio (base 1)
@@ -47,6 +80,55 @@ export type SectionType =
   | 'solo'
   | 'custom';
 
+// ── Modelo Intermedio de Acorde (Intermediate Representation - IR) ──
+
+export interface ChordTone {
+  interval: number;       // Semitonos reales sin comprimir (ej. 14 para 9ª, 17 para 11ª, 21 para 13ª)
+  degree: number;         // Función interválica: 1, 2, 3, 4, 5, 6, 7, 9, 11, 13
+  alteration: number;     // Desplazamiento cromático (-1 para ♭, +1 para ♯)
+  source: "root" | "structural" | "extension" | "add" | "suspension" | "alteration";
+}
+
+export interface AppliedFunction {
+  appliedDegree: number;          // Grado que ejerce la función (ej. 5 para V/, 7 para vii°/)
+  targetDegree: number;           // Grado de destino (ej. 2 para /ii, 1 para /I)
+  targetSemitones: number;        // Altura absoluta de la raíz del acorde destino (0..11)
+  isTritoneSub: boolean;          // true si proviene de substitutions: ["tri"] (Δ-sub)
+}
+
+export interface IntermediateChordModel {
+  // Contexto tonal
+  tonicSemitones: number;
+  scaleContext: string;           // major, dorian, phrygian, etc.
+  degreeIndex: number;            // 1..7
+
+  // Raíz y función secundaria
+  rootSemitones: number;          // Altura absoluta de la raíz del acorde (0..11)
+  rootName: string;
+  applied: AppliedFunction | null;
+
+  // Voces funcionales y sonoras
+  tones: ChordTone[];             // Colección funcional completa (conserva intervalos > 12)
+  effectivePitches: number[];     // Clases de altura [0..11] normalizadas y deduplicadas (para Canvas)
+  audioVoicingMidi: number[];     // Notas MIDI completas con octavas/registros (para WebAudio)
+
+  // Bajo e Inversión
+  requestedInversion: number;     // Inversión original del JSON (0, 1, 2, 3)
+  validatedInversion: number;     // Inversión realizable según las voces disponibles
+  bassTone: ChordTone;            // Voz resuelta para el bajo (o adaptada deterministamente si es ambigua)
+  bassName: string;               // Nombre enarmónico del bajo
+  isAmbiguousInversion: boolean;  // Flag si la inversión original carece de voz (ej. inv 1 con no3)
+
+  // Metadatos para formateadores
+  chordQuality: "maj" | "min" | "dim" | "aug" | "dom7" | "maj7" | "min7" | "halfdim7" | "dim7" | "custom";
+  type: 5 | 7 | 9 | 11 | 13;
+  borrowedMode: string | null;
+  omits: number[];
+  suspensions: number[];
+  adds: number[];
+  alterations: string[];
+}
+
 export interface UniversalChord {
   id: string;
   beat: number;
@@ -63,6 +145,7 @@ export interface UniversalChord {
   borrowed?: string;                   // "phrygian", "dorian", "minor", etc.
   alterations?: string[];              // ["#5", "b5", etc.]
   adds?: (number | string)[];          // [9, 11, etc.]
+  omits?: (number | string)[];         // [3, 5, etc.]
   suspensions?: (number | string)[];   // [2], [4], [2, 4], ["sus2", "sus4"]
   suspension?: string | number;        // "sus2" | "sus4" | 2 | 4
   substitutions?: string[];            // ["tri"]
@@ -75,14 +158,20 @@ export interface UniversalChord {
     tri?: boolean;
     add9?: boolean;
     add11?: boolean;
+    flat9?: boolean;
+    b9?: boolean;
     b5?: boolean;
     sharp5?: boolean;
+    sharp9?: boolean;
     no3?: boolean;
     no5?: boolean;
+    six?: boolean;
+    omits?: (number | string)[];
   };
   notes: string[];      // Frecuencias exactas ["F#4", "A4", "C5"]
   bassNote: string;     // Nota que ejerce de bajo real según la inversión
   midiNotes?: number[];
+  voices?: ResolvedChordVoice[];
   sublabel?: string;
   color?: string;
   isAltered?: boolean;
@@ -95,10 +184,14 @@ export interface SongSection {
   name: string;         // 'Intro', 'Verse', 'Chorus', 'Outro', 'All'
   type?: SectionType;
   meter?: { beats: number; beatUnit: number };
+  timeSignature?: [number, number];
+  canonicalMeter?: CanonicalMeter;
+  meters?: MeterChange[]; // Cambios de compás a lo largo de la sección
+  hasExplicitMeters?: boolean; // Flag si el archivo contenía información métrica explícita
   bpm?: number;
   key: KeySignature;    // Tonalidad local
   keys?: KeyChange[];   // Modulaciones o cambios de tonalidad
-  beatsPerBar: number;  // 4
+  beatsPerBar: number;  // 4, 3, etc.
   totalBars: number;
   totalMeasures?: number;
   melody: UniversalMelodyNote[];
@@ -118,6 +211,9 @@ export interface UniversalSong {
   title: string;
   artist: string;
   bpm: number;
+  timeSignature?: [number, number];
+  canonicalMeter?: CanonicalMeter;
+  meters?: MeterChange[];
   defaultSwing: {
     enabled: boolean;
     percentage: number;
