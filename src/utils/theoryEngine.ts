@@ -20,8 +20,10 @@ import type {
   ChordTone,
   AppliedFunction,
   IntermediateChordModel,
+  CanonicalChordIR,
+  ScaleMode,
 } from '../types/music';
-export type { KeyChange, ChordTone, AppliedFunction, IntermediateChordModel };
+export type { KeyChange, ChordTone, AppliedFunction, IntermediateChordModel, CanonicalChordIR };
 import { getDegreeColor } from './theoryColors';
 
 // ── Re-exports de utilidades comunes para compatibilidad ──
@@ -243,6 +245,49 @@ DIATONIC_DEGREES_BY_SCALE.loc = DIATONIC_DEGREES_BY_SCALE.locrian;
 DIATONIC_DEGREES_BY_SCALE.harmonicminor = DIATONIC_DEGREES_BY_SCALE.harmonic_minor;
 DIATONIC_DEGREES_BY_SCALE.harm_min = DIATONIC_DEGREES_BY_SCALE.harmonic_minor;
 DIATONIC_DEGREES_BY_SCALE.harm = DIATONIC_DEGREES_BY_SCALE.harmonic_minor;
+
+export const DIATONIC_7TH_QUALITIES_BY_MODE: Record<
+  string,
+  Record<number, "maj7" | "min7" | "dom7" | "halfdim7" | "dim7">
+> = {
+  major: {
+    1: "maj7", 2: "min7", 3: "min7", 4: "maj7", 5: "dom7", 6: "min7", 7: "halfdim7"
+  },
+  minor: {
+    1: "min7", 2: "halfdim7", 3: "maj7", 4: "min7", 5: "min7", 6: "maj7", 7: "dom7"
+  },
+  mixolydian: {
+    1: "dom7", 2: "min7", 3: "halfdim7", 4: "maj7", 5: "min7", 6: "min7", 7: "maj7"
+  },
+  dorian: {
+    1: "min7", 2: "min7", 3: "maj7", 4: "dom7", 5: "min7", 6: "halfdim7", 7: "maj7"
+  },
+  phrygian: {
+    1: "min7", 2: "maj7", 3: "dom7", 4: "min7", 5: "halfdim7", 6: "maj7", 7: "min7"
+  },
+  lydian: {
+    1: "maj7", 2: "dom7", 3: "min7", 4: "halfdim7", 5: "maj7", 6: "min7", 7: "min7"
+  },
+  locrian: {
+    1: "halfdim7", 2: "maj7", 3: "min7", 4: "min7", 5: "maj7", 6: "dom7", 7: "min7"
+  },
+  harmonic_minor: {
+    1: "min7", 2: "halfdim7", 3: "maj7", 4: "min7", 5: "dom7", 6: "maj7", 7: "dim7"
+  },
+};
+
+DIATONIC_7TH_QUALITIES_BY_MODE.aeolian = DIATONIC_7TH_QUALITIES_BY_MODE.minor;
+DIATONIC_7TH_QUALITIES_BY_MODE.ionian = DIATONIC_7TH_QUALITIES_BY_MODE.major;
+DIATONIC_7TH_QUALITIES_BY_MODE.mix = DIATONIC_7TH_QUALITIES_BY_MODE.mixolydian;
+DIATONIC_7TH_QUALITIES_BY_MODE.min = DIATONIC_7TH_QUALITIES_BY_MODE.minor;
+DIATONIC_7TH_QUALITIES_BY_MODE.maj = DIATONIC_7TH_QUALITIES_BY_MODE.major;
+DIATONIC_7TH_QUALITIES_BY_MODE.dor = DIATONIC_7TH_QUALITIES_BY_MODE.dorian;
+DIATONIC_7TH_QUALITIES_BY_MODE.phr = DIATONIC_7TH_QUALITIES_BY_MODE.phrygian;
+DIATONIC_7TH_QUALITIES_BY_MODE.lyd = DIATONIC_7TH_QUALITIES_BY_MODE.lydian;
+DIATONIC_7TH_QUALITIES_BY_MODE.loc = DIATONIC_7TH_QUALITIES_BY_MODE.locrian;
+DIATONIC_7TH_QUALITIES_BY_MODE.harmonicminor = DIATONIC_7TH_QUALITIES_BY_MODE.harmonic_minor;
+DIATONIC_7TH_QUALITIES_BY_MODE.harm_min = DIATONIC_7TH_QUALITIES_BY_MODE.harmonic_minor;
+DIATONIC_7TH_QUALITIES_BY_MODE.harm = DIATONIC_7TH_QUALITIES_BY_MODE.harmonic_minor;
 
 export function normalizeKey(key: KeySignature | string | undefined | null): { tonic: string; scale: string } {
   if (!key) return { tonic: 'C', scale: 'major' };
@@ -502,6 +547,11 @@ export function buildIntermediateChord(
   const hasAdd4 = rawAdds.some(a => a === 4 || a === "4" || a === "add4") ||
     Boolean(raw.options?.add4) ||
     Boolean(raw.roman?.includes("add4") || raw.symbol?.includes("add4"));
+  const hasAdd6 = rawAdds.some(a => a === 6 || a === "6" || a === "add6") ||
+    raw.type === 6 || raw.type === "6" ||
+    Boolean(raw.options?.six) ||
+    Boolean(raw.options?.add6) ||
+    Boolean(raw.roman?.includes("add6") || raw.symbol?.includes("add6"));
   const hasAdd9 = rawAdds.includes(9) || rawAdds.includes("9") ||
     Boolean(raw.options?.add9) ||
     Boolean(raw.roman?.includes("add9") || raw.symbol?.includes("add9"));
@@ -579,9 +629,7 @@ export function buildIntermediateChord(
   let applied: AppliedFunction | null = null;
   let rootSemitones = 0;
 
-  if (typeof raw._rootSemitones === 'number') {
-    rootSemitones = normalizeSemitone(raw._rootSemitones);
-  } else if (Array.isArray(rawBorrowed) && rawBorrowed.length >= 7) {
+  if (Array.isArray(rawBorrowed) && rawBorrowed.length >= 7) {
     const degIdx = (rootNum - 1 + 7) % 7;
     const rawOffset = Number(rawBorrowed[degIdx]);
     rootSemitones = normalizeSemitone(tonicSemitones + normalizeSemitone(rawOffset));
@@ -600,65 +648,123 @@ export function buildIntermediateChord(
     } else if (rootSd && rootSd !== "b2" && rootSd !== "#1") {
       targetDegree = rootNum;
     }
-    const targetOffset = DIATONIC_SCALE_SEMITONES[targetDegree] ?? modeOffsets[(targetDegree - 1) % 7] ?? 0;
+    const targetOffset = (modeOffsets && modeOffsets[(targetDegree - 1) % 7] !== undefined)
+      ? modeOffsets[(targetDegree - 1) % 7]
+      : (DIATONIC_SCALE_SEMITONES[targetDegree] ?? 0);
     const targetSemitones = normalizeSemitone(tonicSemitones + targetOffset);
     rootSemitones = normalizeSemitone(targetSemitones + 1);
     applied = {
       appliedDegree: 5,
+      appliedFunctionDegree: 5,
       targetDegree,
+      targetRootSemitones: targetSemitones,
       targetSemitones,
+      appliedRootSemitones: rootSemitones,
       isTritoneSub: true,
     };
   } else if (
     raw.appliedTarget ||
     (raw.applied && String(raw.applied) !== '0') ||
     raw.secondaryType ||
+    raw.appliedFunctionDegree ||
+    raw.targetDegree ||
     (raw.roman && String(raw.roman).includes('/'))
   ) {
     let targetDegree = 1;
+    let appliedFunctionDegree = 5;
+
     const roman = String(raw.roman || '');
-    if (roman.includes('/')) {
+    const secPrefix = roman.includes('/') ? roman.split('/')[0] : '';
+    const ROMAN_TARGET_MAP: Record<string, number> = {
+      i: 1, '1': 1, ii: 2, '2': 2, iii: 3, '3': 3, iv: 4, '4': 4, v: 5, '5': 5, vi: 6, '6': 6, vii: 7, '7': 7
+    };
+
+    // 1. Determinar targetDegree
+    if (raw.targetDegree !== undefined && Number(raw.targetDegree) > 0) {
+      targetDegree = Number(raw.targetDegree);
+    } else if (roman.includes('/')) {
       const targetStr = roman.split('/')[1]?.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const ROMAN_TARGET_MAP: Record<string, number> = {
-        i: 1, '1': 1, ii: 2, '2': 2, iii: 3, '3': 3, iv: 4, '4': 4, v: 5, '5': 5, vi: 6, '6': 6, vii: 7, '7': 7
-      };
-      if (ROMAN_TARGET_MAP[targetStr]) targetDegree = ROMAN_TARGET_MAP[targetStr];
-    } else if (raw.appliedTarget) {
+      if (ROMAN_TARGET_MAP[targetStr]) {
+        targetDegree = ROMAN_TARGET_MAP[targetStr];
+      } else if (raw.appliedTarget) {
+        targetDegree = Number(raw.appliedTarget);
+      } else if (rootNum > 0) {
+        targetDegree = rootNum;
+      }
+    } else if (raw.appliedTarget !== undefined && Number(raw.appliedTarget) > 0) {
       targetDegree = Number(raw.appliedTarget);
     } else if (raw.applied && String(raw.applied) !== '0') {
       const appNum = Number(raw.applied);
+      // En Hooktheory JSON, raw.root es el grado destino cuando raw.applied es la función
       if (appNum === 7 || appNum === 5 || appNum === 4 || appNum === 2) {
-        targetDegree = rootNum !== appNum ? rootNum : 1;
+        targetDegree = rootNum > 0 ? rootNum : 1;
       } else {
         targetDegree = appNum;
       }
+    } else if (rootNum > 0) {
+      targetDegree = rootNum;
     }
 
-    const secPrefix = roman.includes('/') ? roman.split('/')[0] : '';
-    const isVii = raw.secondaryType === "vii°" || secPrefix.startsWith("vii°") || secPrefix.startsWith("viiø") || (!raw.secondaryType && !secPrefix && String(raw.applied) === "7");
-    const isIV = raw.secondaryType === "IV" || secPrefix.startsWith("IV") || secPrefix.startsWith("iv") || (!raw.secondaryType && !secPrefix && String(raw.applied) === "4");
-    const isIi = raw.secondaryType === "ii" || secPrefix.startsWith("ii") || (!raw.secondaryType && !secPrefix && String(raw.applied) === "2");
+    // 2. Determinar appliedFunctionDegree
+    if (raw.appliedFunctionDegree !== undefined && Number(raw.appliedFunctionDegree) > 0) {
+      appliedFunctionDegree = Number(raw.appliedFunctionDegree);
+    } else if (roman.includes('/')) {
+      if (secPrefix.startsWith("vii°") || secPrefix.startsWith("viiø") || secPrefix.startsWith("vii")) {
+        appliedFunctionDegree = 7;
+      } else if (secPrefix.startsWith("IV") || secPrefix.startsWith("iv")) {
+        appliedFunctionDegree = 4;
+      } else if (secPrefix.startsWith("ii") || secPrefix.startsWith("II")) {
+        appliedFunctionDegree = 2;
+      } else {
+        appliedFunctionDegree = 5;
+      }
+    } else if (raw.secondaryType) {
+      if (raw.secondaryType === "vii°") appliedFunctionDegree = 7;
+      else if (raw.secondaryType === "IV") appliedFunctionDegree = 4;
+      else if (raw.secondaryType === "ii") appliedFunctionDegree = 2;
+      else appliedFunctionDegree = 5;
+    } else if (raw.applied && String(raw.applied) !== '0') {
+      const appNum = Number(raw.applied);
+      if (appNum === 7 || appNum === 5 || appNum === 4 || appNum === 2) {
+        appliedFunctionDegree = appNum;
+      } else {
+        appliedFunctionDegree = 5;
+      }
+    }
 
-    const appliedDegree = isVii ? 7 : isIV ? 4 : isIi ? 2 : 5;
-    const targetOffset = DIATONIC_SCALE_SEMITONES[targetDegree] ?? modeOffsets[(targetDegree - 1) % 7] ?? 0;
+    const isVii = appliedFunctionDegree === 7;
+    const isIV = appliedFunctionDegree === 4;
+    const isIi = appliedFunctionDegree === 2;
+
+    const targetOffset = (modeOffsets && modeOffsets[(targetDegree - 1) % 7] !== undefined)
+      ? modeOffsets[(targetDegree - 1) % 7]
+      : (DIATONIC_SCALE_SEMITONES[targetDegree] ?? 0);
     const targetSemitones = normalizeSemitone(tonicSemitones + targetOffset);
 
+    let appliedRootSemitones: number;
     if (isVii) {
-      rootSemitones = normalizeSemitone(targetSemitones - 1);
+      appliedRootSemitones = normalizeSemitone(targetSemitones - 1);
     } else if (isIV) {
-      rootSemitones = normalizeSemitone(targetSemitones + 5);
+      appliedRootSemitones = normalizeSemitone(targetSemitones + 5);
     } else if (isIi) {
-      rootSemitones = normalizeSemitone(targetSemitones + 2);
+      appliedRootSemitones = normalizeSemitone(targetSemitones + 2);
     } else {
-      rootSemitones = normalizeSemitone(targetSemitones + 7);
+      appliedRootSemitones = normalizeSemitone(targetSemitones + 7);
     }
 
+    rootSemitones = appliedRootSemitones;
+
     applied = {
-      appliedDegree,
+      appliedDegree: appliedFunctionDegree,
+      appliedFunctionDegree,
       targetDegree,
+      targetRootSemitones: targetSemitones,
       targetSemitones,
+      appliedRootSemitones,
       isTritoneSub: false,
     };
+  } else if (typeof raw._rootSemitones === 'number') {
+    rootSemitones = normalizeSemitone(raw._rootSemitones);
   } else if (
     rootSd === "#1" || rootSd === "1#" || String(raw.roman).startsWith("♯i") || String(raw.roman).startsWith("#i") ||
     (rootNum === 1 && (raw.alteration === 1 || raw.alteration === "#" || raw.accidental === 1 || raw.accidental === "#" || (raw.quality && (raw.quality === "dim" || raw.quality === "dim7") && (borrowedMode || raw.isAltered))))
@@ -696,27 +802,34 @@ export function buildIntermediateChord(
   }
 
   // ── 4. Nombres de notas según armadura y contexto modal ──
-  const isSharpSecondary = (applied && applied.appliedDegree === 7) ||
+  const hasFlatDegree = rootSd.startsWith('b') || rootSd.startsWith('♭') || /^[b♭][IivV]/.test(String(raw.roman || ''));
+
+  const isExplicitFlat = isTritoneSub ||
+    Boolean(applied?.isTritoneSub) ||
+    hasFlatDegree ||
+    (borrowedMode === 'phrygian' && rootNum === 2) ||
+    (borrowedMode === 'locrian' && (rootNum === 2 || rootNum === 5));
+
+  const isSharpSecondary = !isExplicitFlat && (
+    Boolean(applied && applied.appliedDegree === 7) ||
     rootSd.startsWith("#") ||
-    String(raw.roman).startsWith("♯") || String(raw.roman).startsWith("#") ||
-    rootSemitones === normalizeSemitone(tonicSemitones + 1) ||
-    rootSemitones === normalizeSemitone(tonicSemitones + 6);
+    rootSd.startsWith("♯") ||
+    String(raw.roman || '').startsWith("♯") ||
+    String(raw.roman || '').startsWith("#") ||
+    (borrowedMode === 'lydian' && rootNum === 4)
+  );
 
   const FLAT_KEYS = new Set(['F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'd', 'g', 'c', 'f', 'bb', 'eb']);
   const tonicUpper = tonic ? (tonic[0].toUpperCase() + tonic.slice(1)) : 'C';
   const isMinorFlatKey = scaleContext === 'minor' && ['D', 'G', 'C', 'F', 'BB', 'EB', 'AB', 'DB'].includes(tonicUpper.toUpperCase());
-  const hasFlatDegree = String(raw.roman || '').includes('♭') || rootSd.startsWith('b') || rootSd.startsWith('♭');
-  const useFlats = !isSharpSecondary && (
+  const useFlats = isExplicitFlat || (!isSharpSecondary && (
     FLAT_KEYS.has(tonic) ||
     isMinorFlatKey ||
-    isTritoneSub ||
-    Boolean(applied?.isTritoneSub) ||
     borrowedMode === 'minor' || borrowedMode === 'phrygian' || borrowedMode === 'aeolian' ||
     borrowedMode === 'mixolydian' || borrowedMode === 'dorian' || borrowedMode === 'locrian' ||
-    hasFlatDegree ||
     (raw.quality === "min" && rootSemitones === 7) ||
     (raw.quality === "dom7" && rootSemitones === 0)
-  );
+  ));
 
   const PC_NAMES = useFlats
     ? ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
@@ -769,38 +882,37 @@ export function buildIntermediateChord(
     } else {
       chordQuality = "dim";
     }
-  } else if (
-    raw.quality === "min" || raw.quality === "min7" ||
-    (raw.quality === undefined && (
-      (scaleContext === "major" && (rootNum === 2 || rootNum === 3 || rootNum === 6) && !applied && !borrowedMode) ||
-      (scaleContext === "minor" && (rootNum === 1 || rootNum === 4 || rootNum === 5) && !applied && !borrowedMode) ||
-      (borrowedMode === "locrian" && (rootNum === 3 || rootNum === 4 || rootNum === 7))
-    ))
-  ) {
-    chordQuality = is7th ? "min7" : "min";
+  } else if (applied) {
+    if (applied.isTritoneSub || applied.appliedDegree === 5) {
+      chordQuality = is7th ? "dom7" : "maj";
+    } else if (applied.appliedDegree === 4) {
+      chordQuality = is7th ? (raw.quality === "dom7" || String(raw.roman || '').includes("IV7") ? "dom7" : "maj7") : "maj";
+    } else if (applied.appliedDegree === 2) {
+      chordQuality = is7th ? "min7" : "min";
+    } else {
+      chordQuality = is7th ? "dom7" : "maj";
+    }
+  } else if (hasFlat9 || hasSharp9) {
+    chordQuality = "dom7";
+  } else if (raw.quality === "maj" || raw.quality === "min" || raw.quality === "dom7" || raw.quality === "maj7" || raw.quality === "min7") {
+    chordQuality = raw.quality;
   } else {
+    // Modo determinante: modo prestado si existe, o tonalidad activa
+    const activeMode = borrowedMode || scaleContext || "major";
     if (is7th) {
-      if (
-        applied?.isTritoneSub ||
-        (applied && applied.appliedDegree === 5) ||
-        (scaleContext === "major" && rootNum === 5 && !borrowedMode) ||
-        (borrowedMode === "locrian" && rootNum === 6) ||
-        (borrowedMode === "mixolydian" && rootNum === 1) ||
-        raw.quality === "dom7" ||
-        String(raw.symbol || '').match(/^[A-G][#b]?7(?!\w)/)
-      ) {
-        chordQuality = "dom7";
-      } else if (
-        raw.quality === "maj7" ||
-        (scaleContext === "major" && (rootNum === 1 || rootNum === 4) && !applied && !borrowedMode) ||
-        String(raw.roman || '').includes("^Δ") || String(raw.symbol || '').includes("maj7")
-      ) {
+      const mode7th = DIATONIC_7TH_QUALITIES_BY_MODE[activeMode]?.[rootNum];
+      if (mode7th) {
+        chordQuality = mode7th;
+      } else if (String(raw.roman || '').includes("^Δ") || String(raw.symbol || '').includes("maj7")) {
         chordQuality = "maj7";
       } else {
-        chordQuality = "dom7";
+        chordQuality = (rootNum === 5 || activeMode === "mixolydian") ? "dom7" : "maj7";
       }
     } else {
-      chordQuality = "maj";
+      const modeTriad = DIATONIC_DEGREES_BY_SCALE[activeMode]?.[rootNum]?.quality ||
+        MODAL_MAP[activeMode]?.[rootNum]?.quality ||
+        "maj";
+      chordQuality = modeTriad;
     }
   }
 
@@ -851,10 +963,10 @@ export function buildIntermediateChord(
     }
   }
 
-  // 6ª (grado 6, type 6)
-  const is6th = (raw.type as any) === 6 || Boolean(raw.options?.six);
+  // 6ª (grado 6, type 6 / adds 6)
+  const is6th = (raw.type as any) === 6 || hasAdd6;
   if (is6th) {
-    tones.push({ interval: 9, degree: 6, alteration: 0, source: 'extension' });
+    tones.push({ interval: 9, degree: 6, alteration: 0, source: (raw.type === 6 || raw.type === "6") ? 'extension' : 'add' });
   }
 
   // 7ª (grado 7)
@@ -964,7 +1076,16 @@ export function buildIntermediateChord(
   const rootMidi = tonicMidi + rootSemitones;
   let bassMidi = (baseOctave * 12) + bassPc;
 
-  const upperMidis = tones.map(t => {
+  const isAlteredDominant = (hasFlat9 || hasSharp9) && tones.some(t => t.degree === 7);
+
+  // Para dominantes alterados 7(b9) y 7(#9), política a 4 voces:
+  // Bajo: Fundamental en tesitura grave.
+  // Voces superiores: 3ª, 7ª y 9ª alterada (omitiendo la 5ª y sin duplicar fundamental en agudos).
+  const tonesForUpperVoicing = isAlteredDominant
+    ? tones.filter(t => t.degree === 3 || t.degree === 7 || t.degree === 9)
+    : tones;
+
+  const upperMidis = tonesForUpperVoicing.map(t => {
     let m = rootMidi + (t.interval % 12);
     if (m < rootMidi) m += 12;
     if (t.interval >= 12) m += 12;
@@ -975,32 +1096,112 @@ export function buildIntermediateChord(
     bassMidi -= 12;
   }
 
-  const audioVoicingMidi = requestedInversion > 0
+  const audioVoicingMidi = (requestedInversion > 0 || isAlteredDominant)
     ? Array.from(new Set([bassMidi, ...upperMidis])).sort((a, b) => a - b)
     : Array.from(new Set(upperMidis)).sort((a, b) => a - b);
 
-  return {
+  const bassSemitones = bassPc;
+  const resolvedInversion = validatedInversion;
+  const addedIntervals = tones
+    .filter(t => t.source === 'add' || t.source === 'extension')
+    .map(t => t.interval);
+
+  const model: IntermediateChordModel = {
     tonicSemitones,
     scaleContext,
     degreeIndex,
     rootSemitones,
+    bassSemitones,
     rootName,
     applied,
+    appliedFunctionDegree: applied?.appliedFunctionDegree,
+    targetDegree: applied?.targetDegree,
+    targetRootSemitones: applied?.targetRootSemitones,
+    appliedRootSemitones: applied?.appliedRootSemitones,
     tones,
     effectivePitches,
     audioVoicingMidi,
+    addedIntervals,
     requestedInversion,
     validatedInversion,
+    resolvedInversion,
     bassTone,
     bassName,
     isAmbiguousInversion,
     chordQuality,
     type: resolvedType,
     borrowedMode,
+    useFlats,
     omits: rawOmits.map(Number).filter(n => !isNaN(n)),
     suspensions: rawSuspensions.map(Number).filter(n => !isNaN(n)),
     adds: rawAdds.map(Number).filter(n => !isNaN(n)),
     alterations: rawAlterations,
+  };
+
+  model.canonical = buildCanonicalChordIR(model, raw, key);
+  return model;
+}
+
+/**
+ * Construye la Representación Intermedia Canónica (CanonicalChordIR)
+ * a partir de un IntermediateChordModel resuelto y su contexto.
+ */
+export function buildCanonicalChordIR(
+  model: IntermediateChordModel,
+  raw: any,
+  key: KeySignature | string
+): CanonicalChordIR {
+  const { tonic, scale } = normalizeKey(key);
+  const roman = renderRomanNumeral(model);
+  const symbol = renderChordSymbol(model);
+  const sublabel = renderSubLabels(model);
+  const functionalLabels = model.audioVoicingMidi.map((m, idx) => {
+    const pc = normalizeSemitone(m);
+    const isBass = idx === 0;
+    const { label, voiceNumber } = getChordVoiceFunctionalLabel(pc, model, isBass);
+    return { midi: m, label, voiceNumber };
+  });
+
+  return {
+    rawOriginal: Object.freeze({ ...raw }),
+    context: {
+      tonic,
+      tonicPitchClass: model.tonicSemitones,
+      scaleMode: scale as any,
+      activeBeat: Number(raw?.beat || 1),
+    },
+    identity: {
+      rootPitchClass: model.rootSemitones,
+      rootName: model.rootName,
+      degreeIndex: model.degreeIndex,
+      degreeScaleDegree: String(raw?.rootSd ?? raw?.sd ?? model.degreeIndex),
+      chordQuality: model.chordQuality,
+      baseType: model.type,
+    },
+    secondary: {
+      isApplied: Boolean(model.applied),
+      appliedFunctionDegree: model.applied?.appliedFunctionDegree,
+      targetDegree: model.applied?.targetDegree,
+      targetPitchClass: model.applied?.targetRootSemitones,
+      isTritoneSub: Boolean(model.applied?.isTritoneSub),
+      borrowedMode: model.borrowedMode || undefined,
+    },
+    tones: Object.freeze([...model.tones]),
+    bassAndInversion: {
+      requestedInversion: model.requestedInversion,
+      validatedInversion: model.validatedInversion,
+      bassPitchClass: model.bassSemitones,
+      bassName: model.bassName,
+      isAmbiguous: model.isAmbiguousInversion,
+    },
+    outputs: {
+      effectivePitches: [...model.effectivePitches],
+      audioVoicingMidi: [...model.audioVoicingMidi],
+      romanNumeral: roman,
+      chordSymbol: symbol,
+      sublabel,
+      functionalLabels,
+    },
   };
 }
 
@@ -1020,6 +1221,7 @@ export function renderRomanNumeral(model: IntermediateChordModel): string {
   const is11th = model.type === 11 || model.tones.some(t => t.degree === 11 && t.source === 'extension');
   const is9th = model.type === 9 || model.tones.some(t => t.degree === 9 && t.source === 'extension');
   const is7th = model.tones.some(t => t.degree === 7);
+  const is6th = model.tones.some(t => t.degree === 6);
   const isMaj7 = model.chordQuality === "maj7";
   const inv = model.requestedInversion;
 
@@ -1036,6 +1238,8 @@ export function renderRomanNumeral(model: IntermediateChordModel): string {
     } else {
       invFig = inv === 1 ? "⁶₅" : inv === 2 ? "⁴₃" : inv === 3 ? "⁴₂" : "⁷";
     }
+  } else if (is6th) {
+    invFig = inv === 1 ? "⁶₅" : "⁶";
   } else {
     invFig = inv === 1 ? "⁶" : inv === 2 ? "⁶₄" : "";
   }
@@ -1167,21 +1371,14 @@ export function renderRomanNumeral(model: IntermediateChordModel): string {
  * Renderizador puro del símbolo armónico absoluto con bajo.
  */
 export function renderChordSymbol(model: IntermediateChordModel): string {
-  const isMinorOrDim = model.chordQuality === "min" ||
-    model.chordQuality === "min7" ||
-    model.chordQuality === "dim" ||
-    model.chordQuality === "dim7" ||
-    model.chordQuality === "halfdim7";
-
-  const rootLetter = isMinorOrDim
-    ? (model.rootName[0].toLowerCase() + model.rootName.slice(1))
-    : model.rootName;
+  const rootLetter = model.rootName;
 
   let suffix = "";
   const is13th = model.type === 13 || model.tones.some(t => t.degree === 13 && t.source === 'extension');
   const is11th = model.type === 11 || model.tones.some(t => t.degree === 11 && t.source === 'extension');
   const is9th = model.type === 9 || model.tones.some(t => t.degree === 9 && t.alteration === 0 && t.source === 'extension');
   const is7th = model.tones.some(t => t.degree === 7);
+  const is6th = model.tones.some(t => t.degree === 6);
   const isMaj7 = model.chordQuality === "maj7";
   const hasSharp5 = model.alterations.some(a => a === "#5" || a === "+5" || a === "5");
   const hasFlat5 = model.alterations.some(a => a === "b5" || a === "-5" || a === "♭5");
@@ -1212,6 +1409,8 @@ export function renderChordSymbol(model: IntermediateChordModel): string {
       suffix = "m11";
     } else if (is9th) {
       suffix = "m9";
+    } else if (is6th) {
+      suffix = "m6";
     } else {
       suffix = "m";
     }
@@ -1255,9 +1454,9 @@ export function renderChordSymbol(model: IntermediateChordModel): string {
     if (hasSharp5) suffix = "⁺⁽♯⁵⁾₇";
   }
 
-  // 6th chord or 1st inversion with omit 5
-  if (model.tones.some(t => t.degree === 6) || (model.requestedInversion === 1 && model.omits.includes(5))) {
-    suffix += "⁶";
+  // 6th chord (major 6th) si no es minor 6
+  if (is6th && model.chordQuality !== "min" && !suffix.includes("6")) {
+    suffix += "6";
   }
 
   // Suspensions en tríadas / acordes mayores
@@ -1278,13 +1477,13 @@ export function renderChordSymbol(model: IntermediateChordModel): string {
     suffix += "⁽add9⁾";
   } else if (hasAdd11Only && !suffix.includes("11")) {
     suffix += "⁽add11⁾";
-  } else if (hasAdd13Only && !suffix.includes("13") && !suffix.includes("⁶")) {
+  } else if (hasAdd13Only && !suffix.includes("13") && !suffix.includes("6") && !suffix.includes("⁶")) {
     suffix += "⁽add13⁾";
   }
 
   // Alteraciones
-  if (hasFlat9) suffix += "⁽♭⁹⁾";
-  if (hasSharp9) suffix += "⁽♯⁹⁾";
+  if (hasFlat9) suffix += "(b9)";
+  if (hasSharp9) suffix += "(#9)";
   if (hasFlat5 && !model.chordQuality.includes("dim")) suffix += "(b5)";
 
   // Omisiones
@@ -1340,7 +1539,9 @@ export function parseHookpadChord(
   const symbol = raw.customSymbol || renderChordSymbol(model);
   const sublabel = raw.customSublabel || renderSubLabels(model);
 
-  const pcNames = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+  const pcNames = model.useFlats
+    ? ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
+    : ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const notePitches = model.tones.map(t => {
     const pc = normalizeSemitone(model.rootSemitones + t.interval);
     return `${pcNames[pc]}4`;
@@ -1363,7 +1564,11 @@ export function parseHookpadChord(
     inversion: model.requestedInversion as 0 | 1 | 2 | 3,
     secondaryType: model.applied ? (model.applied.appliedDegree === 7 ? "vii°" : model.applied.appliedDegree === 4 ? "IV" : model.applied.appliedDegree === 2 ? "ii" : "V") : undefined,
     appliedTarget: model.applied?.targetDegree,
-    applied: model.applied ? String(model.applied.targetDegree) : undefined,
+    applied: model.applied ? String(model.applied.appliedFunctionDegree) : undefined,
+    appliedFunctionDegree: model.applied?.appliedFunctionDegree,
+    targetDegree: model.applied?.targetDegree,
+    targetRootSemitones: model.applied?.targetRootSemitones,
+    appliedRootSemitones: model.applied?.appliedRootSemitones,
     borrowed: model.borrowedMode || undefined,
     alterations: model.alterations,
     adds: model.adds,
@@ -1378,6 +1583,11 @@ export function parseHookpadChord(
     color: chordColor,
     isAltered: rootAltered || Boolean(model.borrowedMode) || Boolean(model.applied) || model.requestedInversion > 0,
     _rootSemitones: model.rootSemitones,
+    bassSemitones: model.bassSemitones,
+    resolvedInversion: model.resolvedInversion,
+    addedIntervals: model.addedIntervals,
+    ir: model.canonical,
+    model,
   };
 }
 
@@ -1415,6 +1625,85 @@ export function getTransposedChordSymbol(
 }
 
 /**
+ * Asigna la etiqueta funcional determinista a cada voz de un acorde para PianoRoll y WebAudio.
+ */
+export function getChordVoiceFunctionalLabel(
+  pc: number,
+  model: IntermediateChordModel,
+  isBass: boolean
+): { label: string; voiceNumber: string } {
+  const intervalFromRoot = normalizeSemitone(pc - model.rootSemitones);
+
+  if (isBass && model.requestedInversion > 0 && !model.isAmbiguousInversion) {
+    return { label: 'Bass', voiceNumber: 'Bass' };
+  }
+
+  // Buscar tonos coincidentes en el modelo
+  const matchingTones = model.tones.filter(t => normalizeSemitone(t.interval) === intervalFromRoot);
+  if (matchingTones.length > 0) {
+    let chosenTone = matchingTones[0];
+    if (matchingTones.length > 1 && !isBass) {
+      const extTone = matchingTones.find(t => t.degree >= 9 || t.degree === 4 || t.degree === 2 || t.degree === 6);
+      if (extTone) chosenTone = extTone;
+    }
+
+    if (chosenTone.degree === 1) return { label: '1', voiceNumber: '1' };
+    if (chosenTone.degree === 2) return { label: '2', voiceNumber: '2' };
+    if (chosenTone.degree === 3) return { label: '3', voiceNumber: '3' };
+    if (chosenTone.degree === 4) return { label: '4', voiceNumber: '4' };
+    if (chosenTone.degree === 5) {
+      const lbl = chosenTone.alteration === 1 ? '#5' : chosenTone.alteration === -1 ? 'b5' : '5';
+      return { label: lbl, voiceNumber: lbl };
+    }
+    if (chosenTone.degree === 6) return { label: '6', voiceNumber: '6' };
+    if (chosenTone.degree === 7) {
+      const lbl = chosenTone.alteration === -1 || model.chordQuality === 'dim7'
+        ? '°7'
+        : (chosenTone.interval === 10 || model.chordQuality === 'dom7' || model.chordQuality === 'min7' || model.chordQuality === 'halfdim7')
+          ? 'b7'
+          : '7';
+      return { label: lbl, voiceNumber: lbl };
+    }
+    if (chosenTone.degree === 9) {
+      const lbl = chosenTone.alteration === -1 || chosenTone.interval === 13
+        ? 'b9'
+        : chosenTone.alteration === 1 || chosenTone.interval === 15
+          ? '#9'
+          : '9';
+      return { label: lbl, voiceNumber: lbl };
+    }
+    if (chosenTone.degree === 11) {
+      const lbl = chosenTone.alteration === 1 || chosenTone.interval === 18
+        ? '#11'
+        : chosenTone.alteration === -1 || chosenTone.interval === 16
+          ? 'b11'
+          : '11';
+      return { label: lbl, voiceNumber: lbl };
+    }
+    if (chosenTone.degree === 13) {
+      const lbl = chosenTone.alteration === -1 ? 'b13' : '13';
+      return { label: lbl, voiceNumber: lbl };
+    }
+  }
+
+  // Fallbacks seguros por intervalo respecto a la fundamental
+  if (intervalFromRoot === 0) return { label: '1', voiceNumber: '1' };
+  if (intervalFromRoot === 1) return { label: 'b9', voiceNumber: 'b9' };
+  if (intervalFromRoot === 2) return { label: '9', voiceNumber: '9' };
+  if (intervalFromRoot === 3) return { label: (model.chordQuality === 'min' || model.chordQuality === 'min7' || model.chordQuality === 'dim' || model.chordQuality === 'dim7' || model.chordQuality === 'halfdim7') ? '3' : '#9', voiceNumber: (model.chordQuality === 'min' || model.chordQuality === 'min7' || model.chordQuality === 'dim' || model.chordQuality === 'dim7' || model.chordQuality === 'halfdim7') ? '3' : '#9' };
+  if (intervalFromRoot === 4) return { label: '3', voiceNumber: '3' };
+  if (intervalFromRoot === 5) return { label: '11', voiceNumber: '11' };
+  if (intervalFromRoot === 6) return { label: '5', voiceNumber: '5' };
+  if (intervalFromRoot === 7) return { label: '5', voiceNumber: '5' };
+  if (intervalFromRoot === 8) return { label: '5', voiceNumber: '5' };
+  if (intervalFromRoot === 9) return { label: '6', voiceNumber: '6' };
+  if (intervalFromRoot === 10) return { label: 'b7', voiceNumber: 'b7' };
+  if (intervalFromRoot === 11) return { label: '7', voiceNumber: '7' };
+
+  return { label: '1', voiceNumber: '1' };
+}
+
+/**
  * Resuelve un acorde universal a MIDI absoluto con voicing cerrado estilo Hooktheory.
  */
 export function resolveChordVoicing(
@@ -1428,7 +1717,9 @@ export function resolveChordVoicing(
 
   const { tonic } = normalizeKey(key);
   const tonicPc = NOTE_TO_PC[tonic] ?? 0;
-  const pcNames = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+  const pcNames = model.useFlats
+    ? ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
+    : ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
   function getDegreeSd(pc: number): string {
     const semi = ((pc - tonicPc) % 12 + 12) % 12;
@@ -1445,40 +1736,30 @@ export function resolveChordVoicing(
     return `${pcNames[pc]}${oct}`;
   }
 
-  const harmonicVoices: ResolvedChordVoice[] = model.audioVoicingMidi.map((m) => {
+  const harmonicVoices: ResolvedChordVoice[] = model.audioVoicingMidi.map((m, idx) => {
     const pc = ((m % 12) + 12) % 12;
     const sd = getDegreeSd(pc);
     const { color, isAltered } = getDegreeColor(sd);
     const pitch = midiToPitch(m);
     const noteLabel = pcNames[pc];
+    const isBass = idx === 0;
 
-    const intervalFromRoot = ((pc - model.rootSemitones) % 12 + 12) % 12;
-    let voiceNumber = '1';
-    if (intervalFromRoot === 3 || intervalFromRoot === 4) voiceNumber = '3';
-    else if (intervalFromRoot === 5) voiceNumber = model.tones.some(t => t.degree === 11) ? '11' : (model.tones.some(t => t.degree === 4) ? '4' : '11');
-    else if (intervalFromRoot === 6 || intervalFromRoot === 7 || intervalFromRoot === 8) voiceNumber = '5';
-    else if (intervalFromRoot >= 9 && intervalFromRoot <= 11) voiceNumber = '7';
-    else if (intervalFromRoot === 2) voiceNumber = '9';
+    const { label: voiceLabel, voiceNumber } = getChordVoiceFunctionalLabel(pc, model, isBass);
 
     return {
       midi: m,
       pitch,
-      label: voiceNumber,
+      label: voiceLabel,
       noteLabel,
       sd,
       color,
       isAltered,
-      isBass: false,
+      isBass,
       voiceNumber,
     };
   });
 
-  let voices: ResolvedChordVoice[] = harmonicVoices;
-  if (model.requestedInversion > 0 && !model.isAmbiguousInversion && harmonicVoices.length > 0) {
-    harmonicVoices[0].isBass = true;
-    harmonicVoices[0].label = 'Bass';
-    harmonicVoices[0].voiceNumber = 'Bass';
-  }
+  const voices: ResolvedChordVoice[] = harmonicVoices;
 
   const notes = voices.map((v) => v.pitch);
   const rootDegreeSd = getDegreeSd(model.rootSemitones);

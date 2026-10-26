@@ -286,7 +286,7 @@ assert(chord7_I.symbol === 'Cmaj7', `I7 en Mayor renderiza Cmaj7 (obtenido: ${ch
 
 const chord7_ii = parseHookpadChord({ root: 2, type: 7, inversion: 0, beat: 1, duration: 4 }, keyC);
 assert(chord7_ii.roman === 'ii⁷', `ii7 en Mayor renderiza ii⁷ (obtenido: ${chord7_ii.roman})`);
-assert(chord7_ii.symbol === 'dm7', `ii7 en Mayor renderiza dm7 (obtenido: ${chord7_ii.symbol})`);
+assert(chord7_ii.symbol === 'Dm7', `ii7 en Mayor renderiza Dm7 (obtenido: ${chord7_ii.symbol})`);
 
 // ────────────────────────────────────────────────────────────────────────────
 // 7. PRESERVACIÓN DE TYPE Y ADDS DE HOOKTHEORY (SIN SÉPTIMAS ACCIDENTALES)
@@ -319,7 +319,7 @@ assert(!model_add9_vii.tones.some(t => t.degree === 7), 'Caso add9 vii°: NO con
 const add9_vii_intervals = model_add9_vii.tones.map(t => t.interval);
 assert(JSON.stringify(add9_vii_intervals) === JSON.stringify([0, 3, 6, 14]), `Caso add9 vii°: intervalos [0, 3, 6, 14] (obtenido: ${JSON.stringify(add9_vii_intervals)})`);
 assert(add9_vii.roman === 'vii°⁽ᵃᵈᵈ⁹⁾', `Caso add9 vii°: número romano vii°⁽ᵃᵈᵈ⁹⁾ (obtenido: ${add9_vii.roman})`);
-assert(add9_vii.symbol === 'b°⁽add9⁾', `Caso add9 vii°: símbolo absoluto b°⁽add9⁾ (obtenido: ${add9_vii.symbol})`);
+assert(add9_vii.symbol === 'B°⁽add9⁾', `Caso add9 vii°: símbolo absoluto B°⁽add9⁾ (obtenido: ${add9_vii.symbol})`);
 
 // 7.3: type: 5, adds: [9] en raíz 5 (Sol en Do Mayor) - Caso V(add9)
 const add9_V_raw = { root: 5, type: 5, inversion: 0, adds: [9], omits: [], alterations: [], suspensions: [] };
@@ -391,6 +391,253 @@ assert(model_add13.tones.some(t => t.degree === 13 && t.interval === 21), 'add13
 assert(JSON.stringify(model_add13.tones.map(t => t.interval)) === JSON.stringify([0, 4, 7, 21]), `add13: intervalos [0, 4, 7, 21] (obtenido: ${JSON.stringify(model_add13.tones.map(t => t.interval))})`);
 assert(add13_chord.roman === 'I⁽ᵃᵈᵈ¹³⁾', `add13: roman I⁽ᵃᵈᵈ¹³⁾ (obtenido: ${add13_chord.roman})`);
 assert(add13_chord.symbol === 'C⁽add13⁾', `add13: symbol C⁽add13⁾ (obtenido: ${add13_chord.symbol})`);
+
+// ────────────────────────────────────────────────────────────────────────────
+// 8. CASOS CRÍTICOS DE ARMONÍA HOOKTHEORY (MODOS, INVERSIONES, DOMINANTES ALTERADOS)
+// ────────────────────────────────────────────────────────────────────────────
+console.log('\n8. Casos Críticos de Armonía Hooktheory:');
+
+// 8.1: Séptima mayor en acordes prestados del modo menor (bVI en Sol Mixolidio)
+const keyGMix = { tonic: 'G', scale: 'mixolydian' as const };
+const c_bVI_maj7 = parseHookpadChord(
+  { root: 6, type: 7, borrowed: 'minor', inversion: 0, beat: 1, duration: 4 },
+  keyGMix
+);
+const model_bVI_maj7 = buildIntermediateChord(
+  { root: 6, type: 7, borrowed: 'minor', inversion: 0, beat: 1, duration: 4 },
+  keyGMix
+);
+
+assert(model_bVI_maj7.rootName === 'Eb', `Caso 1: Fundamental de bVI en Sol Mixolidio es Eb (obtenido: ${model_bVI_maj7.rootName})`);
+assert(model_bVI_maj7.chordQuality === 'maj7', `Caso 1: Cualidad resuelta es maj7 (obtenido: ${model_bVI_maj7.chordQuality})`);
+assert(c_bVI_maj7.symbol === 'Ebmaj7', `Caso 1: Símbolo absoluto es Ebmaj7 (obtenido: ${c_bVI_maj7.symbol})`);
+assert(c_bVI_maj7.roman.includes('♭VI') && c_bVI_maj7.roman.includes('^Δ'), `Caso 1: Cifrado romano refleja ♭VI con 7ª mayor (obtenido: ${c_bVI_maj7.roman})`);
+assert(!c_bVI_maj7.symbol.includes('Eb7') || c_bVI_maj7.symbol === 'Ebmaj7', `Caso 1: NO genera Eb7 dominante`);
+// Notas efectivas deben contener D natural (PC 2), NO Db (PC 1)
+assert(model_bVI_maj7.effectivePitches.includes(2), `Caso 1: Notas efectivas contienen Re natural (PC 2: D)`);
+assert(!model_bVI_maj7.effectivePitches.includes(1), `Caso 1: Notas efectivas NO contienen Reb (PC 1: Db)`);
+
+// 8.2: Desacoplamiento de raíz e inversión: F6 en Sol Mixolidio
+const c_F6 = parseHookpadChord(
+  { root: 7, type: 6, inversion: 0, beat: 1, duration: 4 },
+  keyGMix
+);
+const model_F6 = buildIntermediateChord(
+  { root: 7, type: 6, inversion: 0, beat: 1, duration: 4 },
+  keyGMix
+);
+assert(model_F6.rootName === 'F', `Caso 2: Fundamental de grado 7 en Sol Mixolidio es F (obtenido: ${model_F6.rootName})`);
+assert(model_F6.rootSemitones === 5, `Caso 2: rootSemitones es 5 (F)`);
+assert(model_F6.bassSemitones === 5, `Caso 2: bassSemitones es 5 (F)`);
+assert(model_F6.requestedInversion === 0, `Caso 2: requestedInversion es 0`);
+assert(model_F6.resolvedInversion === 0, `Caso 2: resolvedInversion es 0`);
+assert(model_F6.tones.some(t => t.degree === 6 && t.interval === 9), `Caso 2: Contiene la 6ª añadida (Re, intervalo 9)`);
+assert(c_F6.symbol === 'F6', `Caso 2: Símbolo absoluto es F6 (obtenido: ${c_F6.symbol})`);
+assert(!c_F6.symbol.includes('D7'), `Caso 2: NO se confunde con D7 ni genera D7/F#`);
+
+// F con adds: [6]
+const c_F_add6 = parseHookpadChord(
+  { root: 7, type: 5, adds: [6], inversion: 0, beat: 1, duration: 4 },
+  keyGMix
+);
+assert(c_F_add6.symbol === 'F6', `Caso 2b: adds: [6] genera símbolo F6 (obtenido: ${c_F_add6.symbol})`);
+
+// 8.3: Cualidad menor de tríadas diatónicas: grado ii en Sol Mayor (Am)
+const keyGMaj = { tonic: 'G', scale: 'major' as const };
+const c_ii_G = parseHookpadChord(
+  { root: 2, type: 5, inversion: 0, beat: 1, duration: 4 },
+  keyGMaj
+);
+const model_ii_G = buildIntermediateChord(
+  { root: 2, type: 5, inversion: 0, beat: 1, duration: 4 },
+  keyGMaj
+);
+assert(model_ii_G.rootName === 'A', `Caso 3: Fundamental es A (obtenido: ${model_ii_G.rootName})`);
+assert(model_ii_G.chordQuality === 'min', `Caso 3: Cualidad de grado ii en Mayor es min (obtenido: ${model_ii_G.chordQuality})`);
+assert(c_ii_G.symbol === 'Am', `Caso 3: Símbolo absoluto refleja 'Am' (obtenido: ${c_ii_G.symbol})`);
+assert(c_ii_G.roman === 'ii', `Caso 3: Cifrado romano es ii (obtenido: ${c_ii_G.roman})`);
+
+// 8.4: Acorde tónica menor prestado en 1ª inversión: Gm/Bb en Sol Mayor
+const c_Gm_Bb = parseHookpadChord(
+  { root: 1, type: 5, inversion: 1, borrowed: 'minor', beat: 1, duration: 4 },
+  keyGMaj
+);
+const model_Gm_Bb = buildIntermediateChord(
+  { root: 1, type: 5, inversion: 1, borrowed: 'minor', beat: 1, duration: 4 },
+  keyGMaj
+);
+assert(model_Gm_Bb.rootName === 'G', `Caso 4: Fundamental es G`);
+assert(model_Gm_Bb.chordQuality === 'min', `Caso 4: Cualidad es min`);
+assert(model_Gm_Bb.bassName === 'Bb', `Caso 4: Bajo resuelto es Sib (Bb) (obtenido: ${model_Gm_Bb.bassName})`);
+assert(model_Gm_Bb.bassSemitones === 10, `Caso 4: bassSemitones es 10 (Bb)`);
+assert(c_Gm_Bb.symbol === 'Gm/Bb', `Caso 4: Símbolo absoluto es Gm/Bb (obtenido: ${c_Gm_Bb.symbol})`);
+assert(c_Gm_Bb.roman.startsWith('i⁶'), `Caso 4: Cifrado romano refleja 1ª inversión de i (obtenido: ${c_Gm_Bb.roman})`);
+assert(model_Gm_Bb.effectivePitches.includes(10), `Caso 4: Clases de altura contienen Sib (PC 10)`);
+assert(!model_Gm_Bb.effectivePitches.includes(11), `Caso 4: Clases de altura NO contienen Si natural (PC 11: B)`);
+
+// 8.5: Dominantes con novena alterada: E7(b9) y E7(#9)
+// IR teórico mantiene las 5 funciones
+const c_E7b9 = parseHookpadChord(
+  { root: 3, type: 7, alterations: ['b9'], inversion: 0, beat: 1, duration: 4 },
+  keyC
+);
+const model_E7b9 = buildIntermediateChord(
+  { root: 3, type: 7, alterations: ['b9'], inversion: 0, beat: 1, duration: 4 },
+  keyC
+);
+assert(model_E7b9.rootName === 'E', `Caso 5: Fundamental es E`);
+assert(model_E7b9.tones.length === 5, `Caso 5: IR mantiene exactamente las 5 funciones (obtenido: ${model_E7b9.tones.length})`);
+assert(model_E7b9.tones.some(t => t.degree === 1 && t.interval === 0), `Caso 5: Contiene fundamental (E)`);
+assert(model_E7b9.tones.some(t => t.degree === 3 && t.interval === 4), `Caso 5: Contiene 3ª mayor (G#)`);
+assert(model_E7b9.tones.some(t => t.degree === 5 && t.interval === 7), `Caso 5: Contiene 5ª justa (B)`);
+assert(model_E7b9.tones.some(t => t.degree === 7 && t.interval === 10), `Caso 5: Contiene 7ª menor (D)`);
+assert(model_E7b9.tones.some(t => t.degree === 9 && t.alteration === -1), `Caso 5: Contiene b9 alterada (F)`);
+assert(c_E7b9.symbol === 'E7(b9)', `Caso 5: Símbolo absoluto es E7(b9) (obtenido: ${c_E7b9.symbol})`);
+
+// Política de audio a 4 voces para WebAudio y Voice Leading
+assert(model_E7b9.audioVoicingMidi.length === 4, `Caso 5: Voicing de audio contiene exactamente 4 notas (obtenido: ${model_E7b9.audioVoicingMidi.length})`);
+// La 5ª (Si = PC 11) se omite en el audio
+assert(!model_E7b9.audioVoicingMidi.some(m => m % 12 === 11), `Caso 5: El voicing de audio omite la 5ª (B / PC 11)`);
+// Contiene bajo E, 3ª G#, 7ª D, b9 F
+assert(model_E7b9.audioVoicingMidi.some(m => m % 12 === 4), `Caso 5: Audio voicing contiene fundamental E`);
+assert(model_E7b9.audioVoicingMidi.some(m => m % 12 === 8), `Caso 5: Audio voicing contiene 3ª mayor G#`);
+assert(model_E7b9.audioVoicingMidi.some(m => m % 12 === 2), `Caso 5: Audio voicing contiene 7ª menor D`);
+assert(model_E7b9.audioVoicingMidi.some(m => m % 12 === 5), `Caso 5: Audio voicing contiene b9 F`);
+
+// Piano roll functional labels en resolveChordsWithVoiceLeading
+const vl_E7b9 = resolveChordsWithVoiceLeading([c_E7b9], () => keyC);
+const e7b9_voices = vl_E7b9[0].voices;
+const bassVoiceE = e7b9_voices.find(v => v.isBass);
+const thirdVoiceGsharp = e7b9_voices.find(v => v.midi % 12 === 8);
+const seventhVoiceD = e7b9_voices.find(v => v.midi % 12 === 2);
+const flat9VoiceF = e7b9_voices.find(v => v.midi % 12 === 5);
+
+assert(bassVoiceE?.label === '1', `Caso 5: Bajo E etiquetado como '1' (obtenido: ${bassVoiceE?.label})`);
+assert(thirdVoiceGsharp?.label === '3', `Caso 5: 3ª G# etiquetada como '3' (obtenido: ${thirdVoiceGsharp?.label})`);
+assert(seventhVoiceD?.label === 'b7', `Caso 5: 7ª D etiquetada como 'b7' (obtenido: ${seventhVoiceD?.label})`);
+assert(flat9VoiceF?.label === 'b9', `Caso 5: b9 F etiquetada como 'b9' (obtenido: ${flat9VoiceF?.label})`);
+assert(flat9VoiceF?.label !== '1', `Caso 5: Fa NO se etiqueta erróneamente como '1'`);
+
+// 8.6: Dominante con #9: E7(#9)
+const c_E7sharp9 = parseHookpadChord(
+  { root: 3, type: 7, alterations: ['#9'], inversion: 0, beat: 1, duration: 4 },
+  keyC
+);
+const model_E7sharp9 = buildIntermediateChord(
+  { root: 3, type: 7, alterations: ['#9'], inversion: 0, beat: 1, duration: 4 },
+  keyC
+);
+assert(model_E7sharp9.tones.length === 5, `Caso 5b: IR de E7(#9) mantiene las 5 funciones`);
+assert(c_E7sharp9.symbol === 'E7(#9)', `Caso 5b: Símbolo absoluto es E7(#9) (obtenido: ${c_E7sharp9.symbol})`);
+assert(model_E7sharp9.audioVoicingMidi.length === 4, `Caso 5b: Audio voicing de E7(#9) tiene 4 notas`);
+
+const vl_E7sharp9 = resolveChordsWithVoiceLeading([c_E7sharp9], () => keyC);
+const sharp9Voice = vl_E7sharp9[0].voices.find(v => v.midi % 12 === 7 || v.midi % 12 === (4 + 15) % 12);
+assert(sharp9Voice?.label === '#9', `Caso 5b: Voz #9 etiquetada como '#9' (obtenido: ${sharp9Voice?.label})`);
+
+// ============================================================================
+// 9. REQUISITO 10: ACORDES APLICADOS/SECUNDARIOS (applied) EN HOOKTHEORY V2
+// ============================================================================
+console.log('\n--- 9. ACORDES APLICADOS/SECUNDARIOS EN HOOKTHEORY V2 ---');
+
+// 9.1: Caso A: vii°7/ii en La Mayor (root: 2, applied: 7, type: 7)
+const raw_vii7_ii = { root: 2, applied: 7, type: 7, inversion: 0 };
+const model_vii7_ii = buildIntermediateChord(raw_vii7_ii, keyA);
+const chord_vii7_ii = parseHookpadChord(raw_vii7_ii, keyA);
+
+assert(model_vii7_ii.appliedFunctionDegree === 7, `9.1: appliedFunctionDegree es 7 (obtenido: ${model_vii7_ii.appliedFunctionDegree})`);
+assert(model_vii7_ii.targetDegree === 2, `9.1: targetDegree es 2 (obtenido: ${model_vii7_ii.targetDegree})`);
+assert(model_vii7_ii.targetRootSemitones === 11, `9.1: targetRootSemitones es 11 (B / Si) (obtenido: ${model_vii7_ii.targetRootSemitones})`);
+assert(model_vii7_ii.appliedRootSemitones === 10, `9.1: appliedRootSemitones es 10 (A# / La#) (obtenido: ${model_vii7_ii.appliedRootSemitones})`);
+assert(model_vii7_ii.rootName === 'A#', `9.1: rootName es A# (obtenido: ${model_vii7_ii.rootName})`);
+assert(chord_vii7_ii.quality === 'dim7', `9.1: Calidad es dim7 (obtenido: ${chord_vii7_ii.quality})`);
+assert(chord_vii7_ii.symbol === 'A#°7', `9.1: Símbolo absoluto es A#°7 (obtenido: ${chord_vii7_ii.symbol})`);
+assert(!chord_vii7_ii.symbol.includes('m7(b5)'), `9.1: NO genera A#m7(b5)`);
+assert(chord_vii7_ii.roman === 'vii°⁷/ii', `9.1: Cifrado romano es vii°⁷/ii (obtenido: ${chord_vii7_ii.roman})`);
+assert(!chord_vii7_ii.roman.includes('ii/vii') && !chord_vii7_ii.roman.includes('ii7/vii°'), `9.1: NO invierte numerador y denominador`);
+const intervals_vii7_ii = model_vii7_ii.tones.map(t => t.interval);
+assert(JSON.stringify(intervals_vii7_ii) === JSON.stringify([0, 3, 6, 9]), `9.1: Intervalos son [0, 3, 6, 9] (obtenido: ${JSON.stringify(intervals_vii7_ii)})`);
+assert(JSON.stringify(model_vii7_ii.effectivePitches) === JSON.stringify([1, 4, 7, 10]), `9.1: Clases de altura son [1, 4, 7, 10] (C#, E, G, A#) (obtenido: ${JSON.stringify(model_vii7_ii.effectivePitches)})`);
+
+// 9.2: Caso B: vii°7/I en La Mayor (root: 1, applied: 7, type: 7)
+const raw_vii7_I = { root: 1, applied: 7, type: 7, inversion: 0 };
+const model_vii7_I = buildIntermediateChord(raw_vii7_I, keyA);
+const chord_vii7_I = parseHookpadChord(raw_vii7_I, keyA);
+
+assert(model_vii7_I.appliedFunctionDegree === 7, `9.2: appliedFunctionDegree es 7 (obtenido: ${model_vii7_I.appliedFunctionDegree})`);
+assert(model_vii7_I.targetDegree === 1, `9.2: targetDegree es 1 (obtenido: ${model_vii7_I.targetDegree})`);
+assert(model_vii7_I.targetRootSemitones === 9, `9.2: targetRootSemitones es 9 (A / La) (obtenido: ${model_vii7_I.targetRootSemitones})`);
+assert(model_vii7_I.appliedRootSemitones === 8, `9.2: appliedRootSemitones es 8 (G# / Sol#) (obtenido: ${model_vii7_I.appliedRootSemitones})`);
+assert(model_vii7_I.rootName === 'G#', `9.2: rootName es G# (obtenido: ${model_vii7_I.rootName})`);
+assert(chord_vii7_I.quality === 'dim7', `9.2: Calidad es dim7 (obtenido: ${chord_vii7_I.quality})`);
+assert(chord_vii7_I.symbol === 'G#°7', `9.2: Símbolo absoluto es G#°7 (obtenido: ${chord_vii7_I.symbol})`);
+assert(!chord_vii7_I.symbol.includes('Em7(b5)'), `9.2: NO genera Em7(b5)`);
+assert(chord_vii7_I.roman === 'vii°⁷/I', `9.2: Cifrado romano es vii°⁷/I (obtenido: ${chord_vii7_I.roman})`);
+assert(!chord_vii7_I.roman.startsWith('V'), `9.2: NO genera V7/I erróneamente`);
+const intervals_vii7_I = model_vii7_I.tones.map(t => t.interval);
+assert(JSON.stringify(intervals_vii7_I) === JSON.stringify([0, 3, 6, 9]), `9.2: Intervalos son [0, 3, 6, 9] (obtenido: ${JSON.stringify(intervals_vii7_I)})`);
+
+// 9.3: Dominantes secundarias V7/ii y V7/I en La Mayor
+const raw_V7_ii = { root: 2, applied: 5, type: 7, inversion: 0 };
+const chord_V7_ii = parseHookpadChord(raw_V7_ii, keyA);
+assert(chord_V7_ii.symbol === 'F#7', `9.3: V7/ii genera símbolo F#7 (obtenido: ${chord_V7_ii.symbol})`);
+assert(chord_V7_ii.roman === 'V⁷/ii', `9.3: V7/ii genera cifrado V⁷/ii (obtenido: ${chord_V7_ii.roman})`);
+
+const raw_V7_I = { root: 1, applied: 5, type: 7, inversion: 0 };
+const chord_V7_I = parseHookpadChord(raw_V7_I, keyA);
+assert(chord_V7_I.symbol === 'E7', `9.3: V7/I genera símbolo E7 (obtenido: ${chord_V7_I.symbol})`);
+assert(chord_V7_I.roman === 'V⁷/I', `9.3: V7/I genera cifrado V⁷/I (obtenido: ${chord_V7_I.roman})`);
+
+// 9.4: Tríada aplicada vii°/V en Do Mayor (Snow Mountain)
+const raw_vii_V = { root: 5, applied: 7, type: 5, inversion: 0 };
+const model_vii_V = buildIntermediateChord(raw_vii_V, keyC);
+const chord_vii_V = parseHookpadChord(raw_vii_V, keyC);
+assert(model_vii_V.appliedFunctionDegree === 7, `9.4: appliedFunctionDegree es 7 (obtenido: ${model_vii_V.appliedFunctionDegree})`);
+assert(model_vii_V.targetDegree === 5, `9.4: targetDegree es 5 (obtenido: ${model_vii_V.targetDegree})`);
+assert(model_vii_V.rootSemitones === 6, `9.4: Raíz es F# (semitono 6) (obtenido: ${model_vii_V.rootSemitones})`);
+assert(chord_vii_V.quality === 'dim', `9.4: Tríada de calidad dim (obtenido: ${chord_vii_V.quality})`);
+assert(chord_vii_V.symbol === 'F#°', `9.4: Símbolo es F#° (obtenido: ${chord_vii_V.symbol})`);
+assert(chord_vii_V.roman === 'vii°/V', `9.4: Cifrado romano es vii°/V (obtenido: ${chord_vii_V.roman})`);
+assert(JSON.stringify(model_vii_V.tones.map(t => t.interval)) === JSON.stringify([0, 3, 6]), `9.4: Intervalos de tríada disminuida [0, 3, 6]`);
+
+// 9.5: Inversiones de vii°7/ii
+const inv0 = parseHookpadChord({ root: 2, applied: 7, type: 7, inversion: 0 }, keyA);
+const inv1 = parseHookpadChord({ root: 2, applied: 7, type: 7, inversion: 1 }, keyA);
+const inv2 = parseHookpadChord({ root: 2, applied: 7, type: 7, inversion: 2 }, keyA);
+const inv3 = parseHookpadChord({ root: 2, applied: 7, type: 7, inversion: 3 }, keyA);
+
+assert(inv0.roman === 'vii°⁷/ii' && inv0.symbol === 'A#°7' && inv0.bassNote === 'A#', `9.5: inv 0 es vii°⁷/ii con bajo A# (obtenido: ${inv0.roman}, ${inv0.symbol}, ${inv0.bassNote})`);
+assert(inv1.roman === 'vii°⁶₅/ii' && inv1.symbol === 'A#°7/C#' && inv1.bassNote === 'C#', `9.5: inv 1 es vii°⁶₅/ii con bajo C# (obtenido: ${inv1.roman}, ${inv1.symbol}, ${inv1.bassNote})`);
+assert(inv2.roman === 'vii°⁴₃/ii' && inv2.symbol === 'A#°7/E' && inv2.bassNote === 'E', `9.5: inv 2 es vii°⁴₃/ii con bajo E (obtenido: ${inv2.roman}, ${inv2.symbol}, ${inv2.bassNote})`);
+assert(inv3.roman === 'vii°⁴₂/ii' && inv3.symbol === 'A#°7/G' && inv3.bassNote === 'G', `9.5: inv 3 es vii°⁴₂/ii con bajo G (obtenido: ${inv3.roman}, ${inv3.symbol}, ${inv3.bassNote})`);
+
+// 9.6: Acorde semidisminuido explícito viiø7/ii
+const raw_halfdim = { root: 2, applied: 7, type: 7, quality: 'halfdim7' };
+const chord_halfdim = parseHookpadChord(raw_halfdim, keyA);
+const model_halfdim = buildIntermediateChord(raw_halfdim, keyA);
+assert(chord_halfdim.quality === 'halfdim7', `9.6: Calidad es halfdim7`);
+assert(chord_halfdim.symbol === 'A#m7(b5)', `9.6: Símbolo es A#m7(b5)`);
+assert(chord_halfdim.roman === 'viiø⁷/ii', `9.6: Cifrado romano es viiø⁷/ii`);
+assert(JSON.stringify(model_halfdim.tones.map(t => t.interval)) === JSON.stringify([0, 3, 6, 10]), `9.6: Intervalos [0, 3, 6, 10]`);
+
+// 9.7: Estabilidad de re-parseo (idempotencia)
+const reparsed_vii7_ii = parseHookpadChord(chord_vii7_ii, keyA);
+assert(reparsed_vii7_ii.symbol === chord_vii7_ii.symbol, `9.7: Símbolo idéntico tras re-parseo (${reparsed_vii7_ii.symbol})`);
+assert(reparsed_vii7_ii.roman === chord_vii7_ii.roman, `9.7: Cifrado romano idéntico tras re-parseo (${reparsed_vii7_ii.roman})`);
+assert(reparsed_vii7_ii.applied === '7', `9.7: applied se mantiene como '7' tras re-parseo`);
+assert(reparsed_vii7_ii.targetDegree === 2, `9.7: targetDegree se mantiene como 2 tras re-parseo`);
+
+// 9.8: Progresión completa de referencia: I → vii°7/ii → ii7 → vii°7/I en La Mayor
+const refProg = [
+  parseHookpadChord({ root: 1, type: 5 }, keyA),
+  parseHookpadChord({ root: 2, applied: 7, type: 7 }, keyA),
+  parseHookpadChord({ root: 2, type: 7 }, keyA),
+  parseHookpadChord({ root: 1, applied: 7, type: 7 }, keyA),
+];
+assert(refProg[0].roman === 'I' && refProg[0].symbol === 'A', `9.8: Acorde 1 es I / A`);
+assert(refProg[1].roman === 'vii°⁷/ii' && refProg[1].symbol === 'A#°7', `9.8: Acorde 2 es vii°⁷/ii / A#°7`);
+assert(refProg[2].roman === 'ii⁷' && refProg[2].symbol === 'Bm7', `9.8: Acorde 3 es ii⁷ / Bm7`);
+assert(refProg[3].roman === 'vii°⁷/I' && refProg[3].symbol === 'G#°7', `9.8: Acorde 4 es vii°⁷/I / G#°7`);
 
 console.log(`\n========================================`);
 console.log(`VOICE LEADING RESULTS: ${passed} PASSED, ${failed} FAILED`);

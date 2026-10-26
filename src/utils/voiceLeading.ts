@@ -31,6 +31,7 @@ import {
   normalizeSemitone,
   NOTE_TO_PC,
   SCALE_MODE_OFFSETS,
+  getChordVoiceFunctionalLabel,
 } from './theoryEngine';
 import { getDegreeColor } from './theoryColors';
 
@@ -111,11 +112,16 @@ function shouldPitchUseFlats(
  * preserva los grados estructurales fundamentales (1, 3, 5).
  */
 export function getChordUpperPcs(model: IntermediateChordModel): number[] {
-  // Para acordes con 7ª en el bajo (inversion 3), el bloque superior contiene la tríada (1, 3, 5)
-  // Para tríadas invertidas, el bloque superior contiene la tríada completa
-  const tonesToUse = model.requestedInversion === 3 && model.tones.some(t => t.degree === 7)
-    ? model.tones.filter(t => t.degree !== 7)
-    : model.tones;
+  const isAlteredDominant = model.tones.some(t => t.degree === 9 && t.alteration !== 0) &&
+    model.tones.some(t => t.degree === 7);
+
+  let tonesToUse = model.tones;
+  if (isAlteredDominant) {
+    // 4-voice policy: reproduce bass in root, upper voices: 3rd, 7th, altered 9th (omit 5th and duplicate root)
+    tonesToUse = model.tones.filter(t => t.degree === 3 || t.degree === 7 || t.degree === 9);
+  } else if (model.requestedInversion === 3 && model.tones.some(t => t.degree === 7)) {
+    tonesToUse = model.tones.filter(t => t.degree !== 7);
+  }
 
   const pcs = Array.from(
     new Set(tonesToUse.map(t => normalizeSemitone(model.rootSemitones + t.interval)))
@@ -393,6 +399,7 @@ export function resolveChordsWithVoiceLeading(
     // Construcción de la voz de bajo
     const bassSd = getDegreeSd(bassPc, tonicPc);
     const { color: bassColor, isAltered: bassAltered } = getDegreeColor(bassSd);
+    const { label: bassLabel, voiceNumber: bassVoiceNumber } = getChordVoiceFunctionalLabel(bassPc, model, true);
     const bassVoice: ResolvedChordVoice = {
       midi: currentBassMidi,
       pitch: getPitchName(currentBassMidi, useFlats),
@@ -401,8 +408,8 @@ export function resolveChordsWithVoiceLeading(
       color: bassColor,
       isAltered: bassAltered,
       isBass: true,
-      voiceNumber: 'Bass',
-      label: chord.inversion ? 'Bass' : '1',
+      voiceNumber: bassVoiceNumber,
+      label: bassLabel,
     };
 
     // Construcción de las voces armónicas superiores
@@ -410,14 +417,7 @@ export function resolveChordsWithVoiceLeading(
       const pc = normalizeSemitone(m);
       const sd = getDegreeSd(pc, tonicPc);
       const { color, isAltered } = getDegreeColor(sd);
-      const intervalFromRoot = normalizeSemitone(pc - model.rootSemitones);
-
-      let voiceNumber = '1';
-      if (intervalFromRoot === 3 || intervalFromRoot === 4) voiceNumber = '3';
-      else if (intervalFromRoot === 5) voiceNumber = model.tones.some(t => t.degree === 11) ? '11' : (model.tones.some(t => t.degree === 4) ? '4' : '11');
-      else if (intervalFromRoot === 6 || intervalFromRoot === 7 || intervalFromRoot === 8) voiceNumber = '5';
-      else if (intervalFromRoot >= 9 && intervalFromRoot <= 11) voiceNumber = '7';
-      else if (intervalFromRoot === 2) voiceNumber = '9';
+      const { label: voiceLabel, voiceNumber } = getChordVoiceFunctionalLabel(pc, model, false);
 
       return {
         midi: m,
@@ -428,7 +428,7 @@ export function resolveChordsWithVoiceLeading(
         isAltered,
         isBass: false,
         voiceNumber,
-        label: voiceNumber,
+        label: voiceLabel,
       };
     });
 

@@ -80,6 +80,18 @@ export type SectionType =
   | 'solo'
   | 'custom';
 
+export type ChordQuality =
+  | 'maj'
+  | 'min'
+  | 'dim'
+  | 'aug'
+  | 'dom7'
+  | 'maj7'
+  | 'min7'
+  | 'halfdim7'
+  | 'dim7'
+  | 'custom';
+
 // ── Modelo Intermedio de Acorde (Intermediate Representation - IR) ──
 
 export interface ChordTone {
@@ -91,9 +103,75 @@ export interface ChordTone {
 
 export interface AppliedFunction {
   appliedDegree: number;          // Grado que ejerce la función (ej. 5 para V/, 7 para vii°/)
+  appliedFunctionDegree: number;  // Grado funcional aplicado (ej. 7, 5, 4, 2)
   targetDegree: number;           // Grado de destino (ej. 2 para /ii, 1 para /I)
-  targetSemitones: number;        // Altura absoluta de la raíz del acorde destino (0..11)
+  targetRootSemitones: number;    // Altura real de la fundamental del destino (0..11)
+  targetSemitones: number;        // Compatibilidad: altura absoluta de la raíz del destino (0..11)
+  appliedRootSemitones: number;   // Altura real de la fundamental del acorde aplicado (0..11)
   isTritoneSub: boolean;          // true si proviene de substitutions: ["tri"] (Δ-sub)
+}
+
+/**
+ * Representación Intermedia Canónica (CanonicalChordIR)
+ * Desacopla la ingestión cruda de los datos resueltos para visualización y síntesis.
+ */
+export interface CanonicalChordIR {
+  // 1. Datos originales preservados intactos (sin pérdida ni mutación)
+  readonly rawOriginal: Readonly<Record<string, unknown>>;
+
+  // 2. Contexto tonal activo
+  readonly context: {
+    readonly tonic: string;               // ej. "C", "A", "Eb"
+    readonly tonicPitchClass: number;     // 0..11
+    readonly scaleMode: ScaleMode;        // "major", "minor", "dorian", etc.
+    readonly activeBeat: number;          // Beat de inicio en la línea de tiempo
+  };
+
+  // 3. Identidad armónica y grados
+  readonly identity: {
+    readonly rootPitchClass: number;      // Clase de altura de la fundamental (0..11)
+    readonly rootName: string;            // Nombre enarmónico de la fundamental ("C", "F#", "Eb")
+    readonly degreeIndex: number;         // Grado diatónico respecto a la tónica (1..7)
+    readonly degreeScaleDegree: string;   // Grado con alteración relativa ("1", "b3", "#4")
+    readonly chordQuality: ChordQuality;  // "maj" | "min" | "dim" | "aug" | "dom7" | "maj7" | "min7" | "halfdim7" | "dim7"
+    readonly baseType: 5 | 7 | 9 | 11 | 13;
+  };
+
+  // 4. Modulación secundaria o préstamo modal
+  readonly secondary: {
+    readonly isApplied: boolean;
+    readonly appliedFunctionDegree?: number; // 5 para V/, 7 para vii°/, etc.
+    readonly targetDegree?: number;          // Grado destino (1..7)
+    readonly targetPitchClass?: number;      // 0..11
+    readonly isTritoneSub: boolean;          // Sustitución tritonal
+    readonly borrowedMode?: string;          // Modo de préstamo ("minor", "phrygian", etc.)
+  };
+
+  // 5. Colección completa de factores armónicos teóricos
+  readonly tones: ReadonlyArray<ChordTone>;
+
+  // 6. Bajo e inversión
+  readonly bassAndInversion: {
+    readonly requestedInversion: number; // 0, 1, 2, 3
+    readonly validatedInversion: number; // Inversión realizable según las voces disponibles
+    readonly bassPitchClass: number;     // 0..11
+    readonly bassName: string;           // "C", "E", "Bb", "F#"
+    readonly isAmbiguous: boolean;       // Si la nota de la inversión estaba omitida
+  };
+
+  // 7. Salidas resueltas para presentación y síntesis
+  readonly outputs: {
+    readonly effectivePitches: number[]; // [0..11] únicos normalizados (para Canvas)
+    readonly audioVoicingMidi: number[]; // Notas MIDI con registro exacto (para Sampler)
+    readonly romanNumeral: string;       // "I⁶", "vii°⁷/ii", "bIII⁷", "V⁷/V"
+    readonly chordSymbol: string;        // "C/E", "A#°7", "Eb7", "G7"
+    readonly sublabel: string;           // "(phr)", "(m)", "(Δ-sub)", ""
+    readonly functionalLabels: Array<{   // Etiquetas deterministas para PianoRoll
+      readonly midi: number;
+      readonly label: string;            // '1', '3', '5', 'b7', 'b9', 'Bass'
+      readonly voiceNumber: string;
+    }>;
+  };
 }
 
 export interface IntermediateChordModel {
@@ -104,29 +182,40 @@ export interface IntermediateChordModel {
 
   // Raíz y función secundaria
   rootSemitones: number;          // Altura absoluta de la raíz del acorde (0..11)
+  bassSemitones: number;          // Altura absoluta de la nota del bajo del acorde (0..11)
   rootName: string;
   applied: AppliedFunction | null;
+  appliedFunctionDegree?: number;
+  targetDegree?: number;
+  targetRootSemitones?: number;
+  appliedRootSemitones?: number;
 
   // Voces funcionales y sonoras
   tones: ChordTone[];             // Colección funcional completa (conserva intervalos > 12)
   effectivePitches: number[];     // Clases de altura [0..11] normalizadas y deduplicadas (para Canvas)
   audioVoicingMidi: number[];     // Notas MIDI completas con octavas/registros (para WebAudio)
+  addedIntervals: number[];       // Intervalos de extensiones y notas añadidas (ej. [9, 11, 13, 6])
 
   // Bajo e Inversión
   requestedInversion: number;     // Inversión original del JSON (0, 1, 2, 3)
   validatedInversion: number;     // Inversión realizable según las voces disponibles
+  resolvedInversion: number;      // Inversión resuelta (alias formal de validatedInversion)
   bassTone: ChordTone;            // Voz resuelta para el bajo (o adaptada deterministamente si es ambigua)
   bassName: string;               // Nombre enarmónico del bajo
   isAmbiguousInversion: boolean;  // Flag si la inversión original carece de voz (ej. inv 1 con no3)
 
   // Metadatos para formateadores
-  chordQuality: "maj" | "min" | "dim" | "aug" | "dom7" | "maj7" | "min7" | "halfdim7" | "dim7" | "custom";
+  chordQuality: ChordQuality;
   type: 5 | 7 | 9 | 11 | 13;
   borrowedMode: string | null;
+  useFlats?: boolean;
   omits: number[];
   suspensions: number[];
   adds: number[];
   alterations: string[];
+
+  // Referencia canónica opcional
+  canonical?: CanonicalChordIR;
 }
 
 export interface UniversalChord {
@@ -141,7 +230,11 @@ export interface UniversalChord {
   inversion: 0 | 1 | 2 | 3;
   secondaryType?: "V" | "IV" | "vii°" | "ii"; // Prefijo secundario
   appliedTarget?: number;              // Grado destino (1-7)
-  applied?: string;                    // Grado destino en string
+  applied?: string;                    // Grado de función aplicada en string (ej. "7", "5", "4", "2")
+  appliedFunctionDegree?: number;      // Grado funcional aplicado (7, 5, 4, 2)
+  targetDegree?: number;               // Grado destino (1-7)
+  targetRootSemitones?: number;        // Altura real de la fundamental del destino (0..11)
+  appliedRootSemitones?: number;       // Altura real de la fundamental del acorde aplicado (0..11)
   borrowed?: string;                   // "phrygian", "dorian", "minor", etc.
   alterations?: string[];              // ["#5", "b5", etc.]
   adds?: (number | string)[];          // [9, 11, etc.]
@@ -176,7 +269,12 @@ export interface UniversalChord {
   color?: string;
   isAltered?: boolean;
   _rootSemitones?: number; // Semitonos absolutos precalculados respecto a la tónica
+  bassSemitones?: number;  // Semitonos absolutos del bajo (0..11)
+  resolvedInversion?: number;
+  addedIntervals?: number[];
   customSymbol?: string;
+  ir?: CanonicalChordIR;
+  model?: IntermediateChordModel;
 }
 
 export interface SongSection {

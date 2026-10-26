@@ -27,6 +27,10 @@ export interface RawChord {
   type?: number;
   applied?: string | number;
   appliedTarget?: number;
+  appliedFunctionDegree?: number;
+  targetDegree?: number;
+  targetRootSemitones?: number;
+  appliedRootSemitones?: number;
   secondaryType?: "V" | "IV" | "vii°" | "ii" | string;
   borrowed?: string;
   isAltered?: boolean;

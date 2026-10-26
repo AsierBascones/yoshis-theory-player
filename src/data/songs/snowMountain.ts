@@ -53,40 +53,45 @@ function convertChord(c: RawChord, idx: number): UniversalChord {
 
   let roman = c.roman;
   let customSymbol = c.symbol;
-  let rootSemitones: number | undefined = undefined;
   let secondaryType: UniversalChord['secondaryType'] = undefined;
   let appliedTarget: number | undefined = undefined;
+  let appliedFunctionDegree: number | undefined = undefined;
+  let targetDegree: number | undefined = undefined;
 
   if (roman?.includes('/')) {
     const afterSlash = roman.split('/')[1]?.toLowerCase().replace(/[^a-z0-9]/g, '');
     const ROMAN_MAP: Record<string, number> = { i: 1, '1': 1, ii: 2, '2': 2, iii: 3, '3': 3, iv: 4, '4': 4, v: 5, '5': 5, vi: 6, '6': 6, vii: 7, '7': 7 };
-    appliedTarget = ROMAN_MAP[afterSlash];
+    targetDegree = ROMAN_MAP[afterSlash] ?? (typeof c.root === 'number' ? c.root : parseInt(String(c.root), 10));
+    appliedTarget = targetDegree;
     if (roman.startsWith('vii°') || roman.startsWith('viiø')) {
       secondaryType = 'vii°';
+      appliedFunctionDegree = 7;
       quality = (c.type === 7 || roman.includes('7') || roman.includes('⁷')) ? 'dim7' : 'dim';
-      if (appliedTarget) {
-        const targetSemi = [0, 2, 4, 5, 7, 9, 11][appliedTarget - 1] ?? 0;
-        rootSemitones = (targetSemi - 1 + 12) % 12;
-        const SEMI_TO_SD: Record<number, string> = { 1: '#1', 3: '#2', 6: '#4', 8: '#5', 10: '#6' };
-        rootSd = SEMI_TO_SD[rootSemitones] || rootSd;
-      }
     } else if (roman.startsWith('V') || roman.startsWith('v')) {
       secondaryType = 'V';
+      appliedFunctionDegree = 5;
     } else if (roman.startsWith('IV')) {
       secondaryType = 'IV';
+      appliedFunctionDegree = 4;
     } else if (roman.startsWith('ii')) {
       secondaryType = 'ii';
+      appliedFunctionDegree = 2;
     }
-  } else if ((c.applied === 7 && String(c.root) === '5') || (c.applied === 5 && String(c.root) === '7') || roman?.includes('V/vii') || roman?.includes('vii°/V')) {
-    roman = c.type === 7 ? 'vii°⁷/V' : 'vii°/V';
-    customSymbol = c.type === 7 ? 'f#°7' : 'f#°';
-    quality = c.type === 7 ? 'dim7' : 'dim';
-    secondaryType = 'vii°';
-    appliedTarget = 5;
-    rootSd = '#4';
-    rootSemitones = 6;
-  } else if (c.applied) {
-    appliedTarget = typeof c.applied === 'number' ? c.applied : parseInt(String(c.applied), 10);
+  } else if (c.applied && String(c.applied) !== '0') {
+    const appNum = typeof c.applied === 'number' ? c.applied : parseInt(String(c.applied), 10);
+    appliedFunctionDegree = appNum;
+    targetDegree = typeof c.root === 'number' ? c.root : parseInt(String(c.root), 10);
+    appliedTarget = targetDegree;
+    if (appNum === 7) {
+      secondaryType = 'vii°';
+      quality = (c.type === 7) ? 'dim7' : 'dim';
+    } else if (appNum === 4) {
+      secondaryType = 'IV';
+    } else if (appNum === 2) {
+      secondaryType = 'ii';
+    } else {
+      secondaryType = 'V';
+    }
   }
 
   let inv = c.inversion;
@@ -108,15 +113,16 @@ function convertChord(c: RawChord, idx: number): UniversalChord {
     type: (typeof c.type === 'number' ? c.type : (c.symbol?.includes('7') || c.roman?.includes('7') || c.roman?.includes('⁷') ? 7 : 5)) as 5 | 7 | 9 | 11 | 13,
     inversion: inv as 0 | 1 | 2 | 3,
     borrowed: c.borrowed,
-    applied: c.applied ? String(c.applied) : undefined,
+    applied: appliedFunctionDegree ? String(appliedFunctionDegree) : (c.applied ? String(c.applied) : undefined),
     appliedTarget,
+    appliedFunctionDegree,
+    targetDegree,
     secondaryType,
     customSymbol,
     notes: c.notes || [],
     bassNote: (c.notes && c.notes.length > 0 ? c.notes[0] : 'C3'),
     color: c.color,
     isAltered: c.isAltered,
-    _rootSemitones: rootSemitones,
   };
 }
 

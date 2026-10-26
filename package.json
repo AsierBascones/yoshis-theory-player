@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "npx vite-node src/utils/voiceLeading.test.ts && npx vite-node src/utils/rhythmEngine.test.ts",
+    "test": "npx vite-node src/utils/theoryEngine.test.ts && npx vite-node src/utils/voiceLeading.test.ts && npx vite-node src/utils/rhythmEngine.test.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },
