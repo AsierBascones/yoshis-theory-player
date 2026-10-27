@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import usePlayerStore from './store/usePlayerStore';
-import { initAudio, setupSong, disposeAudio } from './audio/audioEngine';
+import { initAudio, setupSong, disposeAudio, playTransport, pauseTransport } from './audio/audioEngine';
 import TransportBar from './components/TransportBar/TransportBar';
 import PianoRoll from './components/PianoRoll/PianoRoll';
 import InstrumentToolbar from './components/InstrumentToolbar/InstrumentToolbar';
@@ -18,12 +18,13 @@ export default function App() {
     setCurrentBeat,
     setActiveNotes,
     setActiveChordNotes,
+    setPlaying,
   } = usePlayerStore();
 
   const activeNotesRef = useRef<Set<number>>(new Set());
 
   // ── Estado y lógica para el Divisor Redimensionable (Vertical Splitter) ──
-  const [instrumentHeight, setInstrumentHeight] = useState<number>(180);
+  const [instrumentHeight, setInstrumentHeight] = useState<number>(230);
   const isDraggingRef = useRef<boolean>(false);
   const startYRef = useRef<number>(0);
   const startHeightRef = useRef<number>(instrumentHeight);
@@ -46,8 +47,8 @@ export default function App() {
       setShowInstrument(true);
     }
     const newHeight = startHeightRef.current - deltaY;
-    const minHeight = 80;
-    const maxHeight = Math.floor(window.innerHeight * 0.55);
+    const minHeight = 90;
+    const maxHeight = Math.floor(window.innerHeight * 0.6);
     setInstrumentHeight(Math.max(minHeight, Math.min(maxHeight, newHeight)));
   };
 
@@ -79,8 +80,8 @@ export default function App() {
       setShowInstrument(true);
     }
     const newHeight = startHeightRef.current - deltaY;
-    const minHeight = 80;
-    const maxHeight = Math.floor(window.innerHeight * 0.55);
+    const minHeight = 90;
+    const maxHeight = Math.floor(window.innerHeight * 0.6);
     setInstrumentHeight(Math.max(minHeight, Math.min(maxHeight, newHeight)));
   };
 
@@ -99,6 +100,54 @@ export default function App() {
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, []);
+
+  // ── Atajos Globales de Teclado (Enter y Space para alternar Play/Pause) ──
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Filtrar solo las teclas del atajo (Enter o Space)
+      if (e.key !== 'Enter' && e.code !== 'Space' && e.key !== ' ') {
+        return;
+      }
+
+      // 2. Comprobar si el foco está en un elemento editable o en un botón
+      const target = e.target as HTMLElement | null;
+      if (
+        target && (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable ||
+          target.tagName === 'BUTTON'
+        )
+      ) {
+        // No capturar en inputs ni interferir con la activación normal de botones
+        return;
+      }
+
+      // 3. Prevenir el comportamiento por defecto únicamente al ejecutar el atajo
+      e.preventDefault();
+
+      // 4. Alternar reproducción de forma atómica y fiable
+      const state = usePlayerStore.getState();
+      if (state.isPlaying) {
+        pauseTransport();
+        state.setPlaying(false);
+      } else {
+        playTransport()
+          .then(() => {
+            state.setPlaying(true);
+          })
+          .catch((err) => {
+            console.error('Error al reanudar reproducción con atajo:', err);
+          });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -125,6 +174,10 @@ export default function App() {
       },
       (chordMidis) => {
         setActiveChordNotes(new Set(chordMidis));
+      },
+      () => {
+        setPlaying(false);
+        setCurrentBeat(song.totalBeats);
       }
     );
 

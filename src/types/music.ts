@@ -66,6 +66,22 @@ export interface UniversalMelodyNote {
   duration: number;     // Duración en beats (0.5, 1.0, etc.)
   sd: string;           // Grado relativo ('1', 'b3', '#4', '7')
   octaveOffset: number; // Desplazamiento de octava (0 = central C5/C4, +1 = aguda, -1 = grave)
+  // Metadatos no destructivos de fidelidad MIDI y análisis polifónico
+  pitchMidi?: number;
+  name?: string;
+  isChordTone?: boolean;
+  melodicRole?: 'chord_tone' | 'passing_tone' | 'neighbor_tone' | 'suspension' | 'unclassified';
+  hand?: 'left' | 'right' | 'indeterminate';
+  voiceRole?:
+    | 'bass'
+    | 'accompaniment_chord'
+    | 'arpeggio_support'
+    | 'primary_melody'
+    | 'counter_melody'
+    | 'ornament'
+    | 'unclassified';
+  voiceConfidence?: number;
+  voiceRationale?: string;
 }
 
 export type UniversalNote = UniversalMelodyNote;
@@ -298,6 +314,8 @@ export interface UniversalChord {
   duration: number;
   roman: string;        // "I⁶", "vii°/V", "bIII⁷", "ii⁴₃", "V⁷sus4"
   symbol: string;       // "C/E", "f#°", "Eb7", "dm7/A", "G7sus4"
+  root?: string;        // Nombre de la fundamental ("A", "C", "F#")
+  bass?: string;        // Alias de bassNote
   rootSd: string;       // Grado de la fundamental relativa ("1", "b3", "4", "#4")
   quality: "maj" | "min" | "dim" | "aug" | "dom7" | "maj7" | "min7" | "halfdim7" | "dim7";
   type: 5 | 7 | 9 | 11 | 13;

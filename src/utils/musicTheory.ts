@@ -33,13 +33,27 @@ export const KEY_PITCH_CLASS = KEY_INDEXES;
  */
 export function getOptimalTransposeInterval(oldKey: string, newKey: string): number {
   const diff = (KEY_INDEXES[newKey] ?? 0) - (KEY_INDEXES[oldKey] ?? 0);
-  return ((diff + 6) % 12) - 6;
+  return ((((diff + 6) % 12) + 12) % 12) - 6;
 }
 
 export interface ScaleModeDef {
   name: string;
   intervals: number[];
   chordQualities: string[];
+}
+
+/**
+ * Formatea el identificador interno de una escala para su presentación visual limpia.
+ * Reemplaza guiones bajos por espacios y normaliza la capitalización.
+ * Ejemplos:
+ *   Harmonic_minor -> Harmonic minor
+ *   Natural_minor  -> Natural minor
+ *   Phrygian       -> Phrygian
+ */
+export function formatScaleName(scale: string): string {
+  if (!scale) return 'Major';
+  const clean = scale.replace(/_/g, ' ').trim();
+  return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
 }
 
 /**

@@ -1173,22 +1173,34 @@ export function buildIntermediateChord(
     // 1. Determinar targetDegree
     if (raw.targetDegree !== undefined && Number(raw.targetDegree) > 0) {
       targetDegree = Number(raw.targetDegree);
+    } else if (raw.appliedTarget !== undefined && Number(raw.appliedTarget) > 0) {
+      targetDegree = Number(raw.appliedTarget);
     } else if (roman.includes('/')) {
       const targetStr = roman.split('/')[1]?.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (ROMAN_TARGET_MAP[targetStr]) {
         targetDegree = ROMAN_TARGET_MAP[targetStr];
       } else if (raw.appliedTarget) {
         targetDegree = Number(raw.appliedTarget);
+      } else if (raw.applied && String(raw.applied) !== '0') {
+        targetDegree = Number(raw.applied);
       } else if (rootNum > 0) {
         targetDegree = rootNum;
       }
-    } else if (raw.appliedTarget !== undefined && Number(raw.appliedTarget) > 0) {
-      targetDegree = Number(raw.appliedTarget);
     } else if (raw.applied && String(raw.applied) !== '0') {
       const appNum = Number(raw.applied);
-      // En Hooktheory JSON, raw.root es el grado destino cuando raw.applied es la función
-      if (appNum === 7 || appNum === 5 || appNum === 4 || appNum === 2) {
-        targetDegree = rootNum > 0 ? rootNum : 1;
+      const rNum = rootNum;
+      // Disambiguación canónica:
+      // En Hooktheory JSON, `raw.applied` es el grado destino y `raw.root` es la función aplicada.
+      // Caso defensivo: si appNum es 7 y rNum no es 7, el grado 7 nunca es destino tónico (no se tonifica un acorde disminuido),
+      // por lo que appNum codifica la función vii° y rNum es el destino.
+      if (appNum === 7 || rNum === 7) {
+        targetDegree = (appNum === 7 ? (rNum !== 7 ? rNum : 1) : appNum);
+      } else if (rNum === 5 || appNum === 5) {
+        targetDegree = (rNum === 5 && appNum !== 5 ? appNum : (appNum === 5 && rNum !== 5 ? rNum : 5));
+      } else if (rNum === 4 || appNum === 4) {
+        targetDegree = (rNum === 4 ? appNum : rNum);
+      } else if (rNum === 2 || appNum === 2) {
+        targetDegree = (rNum === 2 ? appNum : rNum);
       } else {
         targetDegree = appNum;
       }
@@ -1216,10 +1228,17 @@ export function buildIntermediateChord(
       else appliedFunctionDegree = 5;
     } else if (raw.applied && String(raw.applied) !== '0') {
       const appNum = Number(raw.applied);
-      if (appNum === 7 || appNum === 5 || appNum === 4 || appNum === 2) {
-        appliedFunctionDegree = appNum;
-      } else {
+      const rNum = rootNum;
+      if (appNum === 7 || rNum === 7) {
+        appliedFunctionDegree = 7;
+      } else if (rNum === 5 || appNum === 5) {
         appliedFunctionDegree = 5;
+      } else if (rNum === 4 || appNum === 4) {
+        appliedFunctionDegree = 4;
+      } else if (rNum === 2 || appNum === 2) {
+        appliedFunctionDegree = 2;
+      } else {
+        appliedFunctionDegree = (rNum === 7 || rNum === 4 || rNum === 2) ? rNum : 5;
       }
     }
 
@@ -1254,7 +1273,7 @@ export function buildIntermediateChord(
       appliedRootSemitones,
       isTritoneSub: false,
     };
-  } else if (typeof raw._rootSemitones === 'number') {
+  } else if (typeof raw._rootSemitones === 'number' && raw.rootSd === undefined && raw.root === undefined && raw.roman === undefined) {
     rootSemitones = normalizeSemitone(raw._rootSemitones);
   } else if (
     rootSd === "#1" || rootSd === "1#" || String(raw.roman).startsWith("♯i") || String(raw.roman).startsWith("#i") ||
@@ -1302,7 +1321,14 @@ export function buildIntermediateChord(
     (borrowedMode === 'locrian' && (rootNum === 2 || rootNum === 5));
 
   const isSharpSecondary = !isExplicitFlat && (
-    Boolean(applied && applied.appliedDegree === 7) ||
+    Boolean(applied && (
+      applied.appliedDegree === 7 ||
+      applied.appliedFunctionDegree === 7 ||
+      applied.targetDegree === 2 ||
+      applied.targetDegree === 3 ||
+      applied.targetDegree === 5 ||
+      applied.targetDegree === 6
+    )) ||
     rootSd.startsWith("#") ||
     rootSd.startsWith("♯") ||
     String(raw.roman || '').startsWith("♯") ||
@@ -1697,7 +1723,7 @@ export function buildIntermediateChord(
   const model: IntermediateChordModel = {
     tonicSemitones,
     scaleContext,
-    degreeIndex,
+    degreeIndex: applied ? applied.appliedFunctionDegree : degreeIndex,
     rootSemitones,
     bassSemitones,
     rootName,
@@ -2171,6 +2197,8 @@ export function parseHookpadChord(
     duration: Number(raw.duration || 4),
     roman,
     symbol,
+    root: model.rootName,
+    bass: model.bassName,
     rootSd: rootDegreeSd,
     quality: (model.chordQuality === "custom" ? "maj" : model.chordQuality) as any,
     type: typeNum,
@@ -2237,7 +2265,9 @@ export function getTransposedChordSymbol(
 ): string {
   if (!chord) return '';
   const model = buildIntermediateChord(chord, currentKey);
-  return chord.customSymbol || renderChordSymbol(model);
+  const rendered = renderChordSymbol(model);
+  if (rendered) return rendered;
+  return chord.customSymbol || chord.symbol || '';
 }
 
 /**

@@ -28,6 +28,7 @@ import {
   getChordVoiceFunctionalLabel,
 } from './theoryEngine';
 import type { IntermediateChordModel, CanonicalChordIR } from '../types/music';
+import { parseHookpadSection } from './hookpadImporter';
 
 let passed = 0;
 let failed = 0;
@@ -76,21 +77,21 @@ assert(renderChordSymbol(r3) === 'G#°7', `R3: Símbolo es G#°7 (obtenido: ${re
 assert(JSON.stringify(r3.effectivePitches) === JSON.stringify([2, 5, 8, 11]), `R3: Clases de altura son [2, 5, 8, 11] (obtenido: ${JSON.stringify(r3.effectivePitches)})`);
 
 // R4: ii/V en Do Mayor -> Am (root A, quality min, roman ii/V)
-const r4 = buildIntermediateChord({ applied: 2, root: 5, type: 5, inversion: 0 }, 'C');
+const r4 = buildIntermediateChord({ roman: 'ii/V', root: 2, applied: 5, type: 5, inversion: 0 }, 'C');
 assert(r4.rootName === 'A', `R4: Raíz es A (obtenido: ${r4.rootName})`);
 assert(r4.chordQuality === 'min', `R4: Cualidad es min (obtenido: ${r4.chordQuality})`);
 assert(renderRomanNumeral(r4) === 'ii/V', `R4: Romano es ii/V (obtenido: ${renderRomanNumeral(r4)})`);
 assert(renderChordSymbol(r4) === 'Am', `R4: Símbolo es Am (obtenido: ${renderChordSymbol(r4)})`);
 
 // R5: IV/V en Do Mayor -> C (root C, quality maj, roman IV/V)
-const r5 = buildIntermediateChord({ applied: 4, root: 5, type: 5, inversion: 0 }, 'C');
+const r5 = buildIntermediateChord({ roman: 'IV/V', root: 4, applied: 5, type: 5, inversion: 0 }, 'C');
 assert(r5.rootName === 'C', `R5: Raíz es C (obtenido: ${r5.rootName})`);
 assert(r5.chordQuality === 'maj', `R5: Cualidad es maj (obtenido: ${r5.chordQuality})`);
 assert(renderRomanNumeral(r5) === 'IV/V', `R5: Romano es IV/V (obtenido: ${renderRomanNumeral(r5)})`);
 assert(renderChordSymbol(r5) === 'C', `R5: Símbolo es C (obtenido: ${renderChordSymbol(r5)})`);
 
 // R5b: IV/V tétrada diatónica -> Cmaj7
-const r5b = buildIntermediateChord({ applied: 4, root: 5, type: 7, inversion: 0 }, 'C');
+const r5b = buildIntermediateChord({ roman: 'IV^Δ⁷/V', root: 4, applied: 5, type: 7, inversion: 0 }, 'C');
 assert(r5b.chordQuality === 'maj7', `R5b: Cualidad tétrada es maj7 (obtenido: ${r5b.chordQuality})`);
 assert(renderRomanNumeral(r5b) === 'IV^Δ⁷/V', `R5b: Romano es IV^Δ⁷/V (obtenido: ${renderRomanNumeral(r5b)})`);
 assert(renderChordSymbol(r5b) === 'Cmaj7', `R5b: Símbolo es Cmaj7 (obtenido: ${renderChordSymbol(r5b)})`);
@@ -539,6 +540,173 @@ assert(chordAbAuto.borrowed === 'minor', `Ab sin metadato infiere borrowed minor
 assert(chordAbAuto.ir?.secondary.borrowed?.isBorrowed === true, 'CanonicalChordIR contiene secondary.borrowed');
 assert(chordAbAuto.ir?.secondary.borrowed?.provenance === 'inferred', 'CanonicalChordIR secondary.borrowed es inferred');
 assert(chordAbAuto.ir?.secondary.borrowed?.isAmbiguous === true, 'CanonicalChordIR secondary.borrowed registra ambigüedad');
+
+// ────────────────────────────────────────────────────────────────────────────
+// 9. RESOLUCIÓN DE ACORDES APLICADOS Y DIATÓNICOS (V/ii, ii, V7/ii, ii7)
+// ────────────────────────────────────────────────────────────────────────────
+console.log('\n9. Resolución de Acordes Aplicados y Diatónicos (V/ii, ii, V7/ii, ii7, Slash Chords):');
+
+// 9.1 Caso de Referencia en Do Mayor: V/ii (Dominante del 2º grado -> La Mayor)
+const vOfIiC = parseHookpadChord({ root: 5, applied: 2, type: 5 }, 'C', 'major');
+assert(vOfIiC.root === 'A', `V/ii en C: raíz debe ser A (obtenido: ${vOfIiC.root})`);
+assert(vOfIiC.quality === 'maj', `V/ii en C: cualidad debe ser maj (obtenido: ${vOfIiC.quality})`);
+assert(vOfIiC.symbol === 'A', `V/ii en C: símbolo debe ser A (obtenido: ${vOfIiC.symbol})`);
+assert(vOfIiC.roman === 'V/ii', `V/ii en C: romano debe ser V/ii (obtenido: ${vOfIiC.roman})`);
+assert(vOfIiC.bass === 'A', `V/ii en C: bajo debe ser A (obtenido: ${vOfIiC.bass})`);
+assert(vOfIiC.appliedTarget === 2, `V/ii en C: appliedTarget debe ser 2 (obtenido: ${vOfIiC.appliedTarget})`);
+assert(vOfIiC.appliedFunctionDegree === 5, `V/ii en C: appliedFunctionDegree debe ser 5 (obtenido: ${vOfIiC.appliedFunctionDegree})`);
+assert(vOfIiC.notes.some(n => n.startsWith('A')), `V/ii en C: notas contienen La (A)`);
+assert(vOfIiC.notes.some(n => n.startsWith('C#')), `V/ii en C: notas contienen Do# (C#)`);
+assert(vOfIiC.notes.some(n => n.startsWith('E')), `V/ii en C: notas contienen Mi (E)`);
+
+// 9.2 Caso de Referencia en Do Mayor: ii (Segundo grado diatónico -> Re Menor)
+const iiC = parseHookpadChord({ root: 2, type: 5 }, 'C', 'major');
+assert(iiC.root === 'D', `ii en C: raíz debe ser D (obtenido: ${iiC.root})`);
+assert(iiC.quality === 'min', `ii en C: cualidad debe ser min (obtenido: ${iiC.quality})`);
+assert(iiC.symbol === 'Dm', `ii en C: símbolo debe ser Dm (obtenido: ${iiC.symbol})`);
+assert(iiC.roman === 'ii', `ii en C: romano debe ser ii (obtenido: ${iiC.roman})`);
+assert(iiC.bass === 'D', `ii en C: bajo debe ser D (obtenido: ${iiC.bass})`);
+assert(!iiC.applied || String(iiC.applied) === '0', `ii en C: no debe ser acorde aplicado`);
+assert(iiC.notes.some(n => n.startsWith('D')), `ii en C: notas contienen Re (D)`);
+assert(iiC.notes.some(n => n.startsWith('F') && !n.startsWith('F#')), `ii en C: notas contienen Fa natural (F)`);
+assert(iiC.notes.some(n => n.startsWith('A')), `ii en C: notas contienen La (A)`);
+
+// 9.3 Caso de Referencia en Do Mayor: V7/ii (Dominante con séptima -> La 7)
+const v7OfIiC = parseHookpadChord({ root: 5, applied: 2, type: 7 }, 'C', 'major');
+assert(v7OfIiC.root === 'A', `V7/ii en C: raíz debe ser A (obtenido: ${v7OfIiC.root})`);
+assert(v7OfIiC.quality === 'dom7', `V7/ii en C: cualidad debe ser dom7 (obtenido: ${v7OfIiC.quality})`);
+assert(v7OfIiC.symbol === 'A7', `V7/ii en C: símbolo debe ser A7 (obtenido: ${v7OfIiC.symbol})`);
+assert(v7OfIiC.roman === 'V⁷/ii', `V7/ii en C: romano debe ser V⁷/ii (obtenido: ${v7OfIiC.roman})`);
+assert(v7OfIiC.appliedTarget === 2, `V7/ii en C: appliedTarget debe ser 2 (obtenido: ${v7OfIiC.appliedTarget})`);
+assert(v7OfIiC.notes.some(n => n.startsWith('A')), `V7/ii en C: notas contienen La (A)`);
+assert(v7OfIiC.notes.some(n => n.startsWith('C#')), `V7/ii en C: notas contienen Do# (C#)`);
+assert(v7OfIiC.notes.some(n => n.startsWith('E')), `V7/ii en C: notas contienen Mi (E)`);
+assert(v7OfIiC.notes.some(n => n.startsWith('G')), `V7/ii en C: notas contienen Sol (G)`);
+
+// 9.4 Caso de Referencia en Do Mayor: ii7 (Segundo grado con séptima -> Re menor 7)
+const ii7C = parseHookpadChord({ root: 2, type: 7 }, 'C', 'major');
+assert(ii7C.root === 'D', `ii7 en C: raíz debe ser D (obtenido: ${ii7C.root})`);
+assert(ii7C.quality === 'min7', `ii7 en C: cualidad debe ser min7 (obtenido: ${ii7C.quality})`);
+assert(ii7C.symbol === 'Dm7', `ii7 en C: símbolo debe ser Dm7 (obtenido: ${ii7C.symbol})`);
+assert(ii7C.roman === 'ii⁷', `ii7 en C: romano debe ser ii⁷ (obtenido: ${ii7C.roman})`);
+assert(ii7C.notes.some(n => n.startsWith('D')), `ii7 en C: notas contienen Re (D)`);
+assert(ii7C.notes.some(n => n.startsWith('F') && !n.startsWith('F#')), `ii7 en C: notas contienen Fa (F)`);
+assert(ii7C.notes.some(n => n.startsWith('A')), `ii7 en C: notas contienen La (A)`);
+assert(ii7C.notes.some(n => n.startsWith('C')), `ii7 en C: notas contienen Do (C)`);
+
+// 9.5 Verificación de progresión completa V/ii -> ii mediante parseHookpadSection
+const hookpadJsonC = JSON.stringify({
+  tonic: 'C',
+  scale: 'major',
+  bpm: 120,
+  chords: [
+    { root: 5, applied: 2, type: 5, beat: 1, duration: 2 },
+    { root: 2, type: 5, beat: 3, duration: 2 }
+  ]
+});
+const sectionC = parseHookpadSection(hookpadJsonC);
+assert(sectionC.chords.length === 2, `Sección contiene 2 acordes`);
+assert(sectionC.chords[0].symbol === 'A', `Progresión Acorde 1: símbolo es A (obtenido: ${sectionC.chords[0].symbol})`);
+assert(sectionC.chords[0].roman === 'V/ii', `Progresión Acorde 1: romano es V/ii (obtenido: ${sectionC.chords[0].roman})`);
+assert(sectionC.chords[0].root === 'A', `Progresión Acorde 1: raíz es A (obtenido: ${sectionC.chords[0].root})`);
+assert(sectionC.chords[1].symbol === 'Dm', `Progresión Acorde 2: símbolo es Dm (obtenido: ${sectionC.chords[1].symbol})`);
+assert(sectionC.chords[1].roman === 'ii', `Progresión Acorde 2: romano es ii (obtenido: ${sectionC.chords[1].roman})`);
+assert(sectionC.chords[1].root === 'D', `Progresión Acorde 2: raíz es D (obtenido: ${sectionC.chords[1].root})`);
+assert(sectionC.chords[0].beat < sectionC.chords[1].beat, `Orden temporal preservado estrictamente: V/ii antes de ii`);
+
+// 9.6 Verificación en Sol Mayor (G major):
+// En G mayor: ii es Am (A-C-E), V/ii es E mayor (E-G#-B)
+const vOfIiG = parseHookpadChord({ root: 5, applied: 2, type: 5 }, 'G', 'major');
+assert(vOfIiG.root === 'E', `V/ii en G: raíz debe ser E (obtenido: ${vOfIiG.root})`);
+assert(vOfIiG.quality === 'maj', `V/ii en G: cualidad debe ser maj`);
+assert(vOfIiG.symbol === 'E', `V/ii en G: símbolo debe ser E (obtenido: ${vOfIiG.symbol})`);
+assert(vOfIiG.roman === 'V/ii', `V/ii en G: romano debe ser V/ii (obtenido: ${vOfIiG.roman})`);
+assert(vOfIiG.notes.some(n => n.startsWith('E')), `V/ii en G: notas contienen Mi (E)`);
+assert(vOfIiG.notes.some(n => n.startsWith('G#')), `V/ii en G: notas contienen Sol# (G#)`);
+assert(vOfIiG.notes.some(n => n.startsWith('B')), `V/ii en G: notas contienen Si (B)`);
+
+const iiG = parseHookpadChord({ root: 2, type: 5 }, 'G', 'major');
+assert(iiG.root === 'A', `ii en G: raíz debe ser A (obtenido: ${iiG.root})`);
+assert(iiG.quality === 'min', `ii en G: cualidad debe ser min`);
+assert(iiG.symbol === 'Am', `ii en G: símbolo debe ser Am (obtenido: ${iiG.symbol})`);
+assert(iiG.roman === 'ii', `ii en G: romano debe ser ii (obtenido: ${iiG.roman})`);
+
+const v7OfIiG = parseHookpadChord({ root: 5, applied: 2, type: 7 }, 'G', 'major');
+assert(v7OfIiG.root === 'E', `V7/ii en G: raíz debe ser E`);
+assert(v7OfIiG.symbol === 'E7', `V7/ii en G: símbolo debe ser E7 (obtenido: ${v7OfIiG.symbol})`);
+assert(v7OfIiG.roman === 'V⁷/ii', `V7/ii en G: romano debe ser V⁷/ii (obtenido: ${v7OfIiG.roman})`);
+
+// 9.7 Verificación en Fa Mayor (F major):
+// En F mayor: ii es Gm (G-Bb-D), V/ii es D mayor (D-F#-A)
+const vOfIiF = parseHookpadChord({ root: 5, applied: 2, type: 5 }, 'F', 'major');
+assert(vOfIiF.root === 'D', `V/ii en F: raíz debe ser D (obtenido: ${vOfIiF.root})`);
+assert(vOfIiF.quality === 'maj', `V/ii en F: cualidad debe ser maj`);
+assert(vOfIiF.symbol === 'D', `V/ii en F: símbolo debe ser D (obtenido: ${vOfIiF.symbol})`);
+assert(vOfIiF.roman === 'V/ii', `V/ii en F: romano debe ser V/ii (obtenido: ${vOfIiF.roman})`);
+assert(vOfIiF.notes.some(n => n.startsWith('D')), `V/ii en F: notas contienen Re (D)`);
+assert(vOfIiF.notes.some(n => n.startsWith('F#')), `V/ii en F: notas contienen Fa# (F#)`);
+assert(vOfIiF.notes.some(n => n.startsWith('A')), `V/ii en F: notas contienen La (A)`);
+
+const iiF = parseHookpadChord({ root: 2, type: 5 }, 'F', 'major');
+assert(iiF.root === 'G', `ii en F: raíz debe ser G (obtenido: ${iiF.root})`);
+assert(iiF.quality === 'min', `ii en F: cualidad debe ser min`);
+assert(iiF.symbol === 'Gm', `ii en F: símbolo debe ser Gm (obtenido: ${iiF.symbol})`);
+assert(iiF.roman === 'ii', `ii en F: romano debe ser ii (obtenido: ${iiF.roman})`);
+
+// 9.8 Verificación en Re Mayor (D major):
+// En D mayor: ii es Em (E-G-B), V/ii es B mayor (B-D#-F#)
+const vOfIiD = parseHookpadChord({ root: 5, applied: 2, type: 5 }, 'D', 'major');
+assert(vOfIiD.root === 'B', `V/ii en D: raíz debe ser B (obtenido: ${vOfIiD.root})`);
+assert(vOfIiD.quality === 'maj', `V/ii en D: cualidad debe ser maj`);
+assert(vOfIiD.symbol === 'B', `V/ii en D: símbolo debe ser B (obtenido: ${vOfIiD.symbol})`);
+assert(vOfIiD.roman === 'V/ii', `V/ii en D: romano debe ser V/ii (obtenido: ${vOfIiD.roman})`);
+assert(vOfIiD.notes.some(n => n.startsWith('B')), `V/ii en D: notas contienen Si (B)`);
+assert(vOfIiD.notes.some(n => n.startsWith('D#')), `V/ii en D: notas contienen Re# (D#)`);
+assert(vOfIiD.notes.some(n => n.startsWith('F#')), `V/ii en D: notas contienen Fa# (F#)`);
+
+const iiD = parseHookpadChord({ root: 2, type: 5 }, 'D', 'major');
+assert(iiD.root === 'E', `ii en D: raíz debe ser E (obtenido: ${iiD.root})`);
+assert(iiD.quality === 'min', `ii en D: cualidad debe ser min`);
+assert(iiD.symbol === 'Em', `ii en D: símbolo debe ser Em (obtenido: ${iiD.symbol})`);
+assert(iiD.roman === 'ii', `ii en D: romano debe ser ii (obtenido: ${iiD.roman})`);
+
+// 9.9 Acordes con barra explícitos (Slash Chords) no se confunden con acordes aplicados:
+// En Re Mayor: V en 1ª inversión es A/C# (la fundamental es A, el bajo es la 3ª C#)
+const slashAoverCSharpInD = parseHookpadChord({ root: 5, inversion: 1, type: 5 }, 'D', 'major');
+assert(slashAoverCSharpInD.symbol === 'A/C#', `Slash chord A/C# (V6 en D): símbolo es A/C# (obtenido: ${slashAoverCSharpInD.symbol})`);
+assert(slashAoverCSharpInD.bass === 'C#' || slashAoverCSharpInD.bassNote === 'C#', `A/C#: bajo es C#`);
+assert(!slashAoverCSharpInD.applied || String(slashAoverCSharpInD.applied) === '0', `Slash chord A/C#: NO tiene applied chord`);
+assert(!slashAoverCSharpInD.roman.includes('/ii'), `Slash chord A/C#: romano NO contiene /ii (obtenido: ${slashAoverCSharpInD.roman})`);
+assert(slashAoverCSharpInD.roman === 'V⁶', `Slash chord A/C#: romano es V⁶ (obtenido: ${slashAoverCSharpInD.roman})`);
+
+// En Do Mayor: I en 1ª inversión es C/E (fundamental C, bajo E)
+const slashCoverE = parseHookpadChord({ root: 1, inversion: 1, type: 5 }, 'C', 'major');
+assert(slashCoverE.bass === 'E', `C/E: bajo es E (obtenido: ${slashCoverE.bass})`);
+assert(slashCoverE.symbol === 'C/E', `C/E: símbolo es C/E (obtenido: ${slashCoverE.symbol})`);
+assert(slashCoverE.roman === 'I⁶', `C/E: romano es I⁶ (obtenido: ${slashCoverE.roman})`);
+assert(!slashCoverE.applied || String(slashCoverE.applied) === '0', `C/E: NO tiene applied chord`);
+
+// En Do Mayor: V/ii en 1ª inversión es V6/ii con símbolo A/C#
+// Demuestra que el slash del símbolo (/C#) denota el bajo, mientras que el slash del romano (/ii) denota el objetivo aplicado
+const slashV6ofIi = parseHookpadChord({ root: 5, applied: 2, inversion: 1, type: 5 }, 'C', 'major');
+assert(slashV6ofIi.symbol === 'A/C#', `V6/ii: símbolo es A/C# (obtenido: ${slashV6ofIi.symbol})`);
+assert(slashV6ofIi.roman === 'V⁶/ii', `V6/ii: romano es V⁶/ii (obtenido: ${slashV6ofIi.roman})`);
+assert(slashV6ofIi.bass === 'C#', `V6/ii: bajo es C# (obtenido: ${slashV6ofIi.bass})`);
+assert(slashV6ofIi.appliedTarget === 2, `V6/ii: objetivo aplicado es grado 2 (ii)`);
+
+// 9.10 Acordes Diatónicos Ordinarios no se ven alterados:
+const diatonicV = parseHookpadChord({ root: 5, type: 5 }, 'C', 'major');
+assert(diatonicV.root === 'G', `V diatónico en C: raíz es G (obtenido: ${diatonicV.root})`);
+assert(diatonicV.quality === 'maj', `V diatónico en C: cualidad es maj`);
+assert(diatonicV.symbol === 'G', `V diatónico en C: símbolo es G (obtenido: ${diatonicV.symbol})`);
+assert(diatonicV.roman === 'V', `V diatónico en C: romano es V (obtenido: ${diatonicV.roman})`);
+assert(!diatonicV.applied || String(diatonicV.applied) === '0', `V diatónico: sin applied`);
+
+const diatonicV7 = parseHookpadChord({ root: 5, type: 7 }, 'C', 'major');
+assert(diatonicV7.root === 'G', `V7 diatónico en C: raíz es G (obtenido: ${diatonicV7.root})`);
+assert(diatonicV7.quality === 'dom7', `V7 diatónico en C: cualidad es dom7`);
+assert(diatonicV7.symbol === 'G7', `V7 diatónico en C: símbolo es G7 (obtenido: ${diatonicV7.symbol})`);
+assert(diatonicV7.roman === 'V⁷', `V7 diatónico en C: romano es V⁷ (obtenido: ${diatonicV7.roman})`);
 
 // ────────────────────────────────────────────────────────────────────────────
 // RESULTADOS FINALES

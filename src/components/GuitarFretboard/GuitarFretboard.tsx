@@ -253,12 +253,13 @@ export default function GuitarFretboard() {
     showMelody,
     showChords,
     semitoneOffset,
+    selectedChord,
   } = usePlayerStore();
 
   const [fretMode, setFretMode] = useState<'auto' | '24'>('auto');
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 1. Acorde activo en el instante actual
+  // 1. Acorde activo o seleccionado
   const activeChord = useMemo(() => {
     return (
       song.chords.find(
@@ -267,11 +268,13 @@ export default function GuitarFretboard() {
     );
   }, [currentBeat, song.chords]);
 
+  const displayChord = selectedChord || activeChord;
+
   // Postura de acorde activa (voicings de 6 cuerdas)
   const activeVoicing = useMemo<ChordVoicing | null>(() => {
-    if (!showChords || !activeChord) return null;
-    return resolveGuitarVoicing(activeChord.symbol);
-  }, [showChords, activeChord]);
+    if (!showChords || !displayChord) return null;
+    return resolveGuitarVoicing(displayChord.symbol);
+  }, [showChords, displayChord]);
 
   // Centro de mano de la postura activa
   const handCenterFret = useMemo<number>(() => {
@@ -406,9 +409,9 @@ export default function GuitarFretboard() {
             </svg>
             Diapasón de Guitarra
           </span>
-          {showChords && activeChord && (
+          {showChords && displayChord && (
             <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-950/60 border border-amber-800/60 px-2 py-0.5 rounded shadow-sm">
-              Acorde: {activeChord.symbol}
+              Acorde: {displayChord.symbol}
             </span>
           )}
         </div>

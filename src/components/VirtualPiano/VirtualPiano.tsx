@@ -9,6 +9,7 @@ import {
 } from '../../utils/musicTheory';
 import { getColor, getColorAlpha } from '../../utils/theoryColors';
 import { isBlackKey } from '../../utils/midiToNote';
+import { pitchToMidi } from '../../utils/theoryParser';
 
 interface KeyInfo {
   midi: number;
@@ -33,6 +34,7 @@ export default function VirtualPiano() {
     activeChordNotes,
     showMelody,
     showChords,
+    selectedChord,
     currentKey,
     keyMode,
     semitoneOffset,
@@ -120,11 +122,43 @@ export default function VirtualPiano() {
     }
   };
 
-  // 3. Iluminación de teclas estrictamente sincronizada con currentBeat
+  const activeChord = useMemo(() => {
+    return song.chords.find(
+      (c) => currentBeat >= c.beat && currentBeat < c.beat + c.duration
+    );
+  }, [currentBeat, song.chords]);
+
+  const chordForLabels = selectedChord || activeChord;
+
+  // 3. Iluminación de teclas estrictamente sincronizada con selección persistente y currentBeat
   const activePitchesAtBeat = useMemo(() => {
     const melody = new Set<number>();
     const chord = new Set<number>();
 
+    // 1. Acorde: La selección manual es persistente y permanece iluminada en el teclado
+    if (selectedChord && showChords) {
+      if (selectedChord.midiNotes && selectedChord.midiNotes.length > 0) {
+        selectedChord.midiNotes.forEach((m) => chord.add(m));
+      } else if (selectedChord.notes) {
+        selectedChord.notes.forEach((p) => {
+          const m = pitchToMidi(p);
+          if (m !== null) chord.add(m);
+        });
+      }
+    } else if (showChords) {
+      // Si no hay selección manual: durante reproducción sigue el playhead; en pausa muestra notas de preview
+      if (isPlaying && activeChord) {
+        if (activeChord.midiNotes && activeChord.midiNotes.length > 0) {
+          activeChord.midiNotes.forEach((m) => chord.add(m));
+        } else if (activeChord.rootMidi) {
+          chord.add(activeChord.rootMidi);
+        }
+      } else {
+        activeChordNotes.forEach((m) => chord.add(m));
+      }
+    }
+
+    // 2. Melodía: dinámicamente iluminada bajo el playhead al reproducir o al interactuar
     if (isPlaying) {
       if (showMelody) {
         for (const n of parsedNotes) {
@@ -133,31 +167,12 @@ export default function VirtualPiano() {
           }
         }
       }
-      if (showChords) {
-        for (const c of song.chords) {
-          if (currentBeat >= c.beat && currentBeat < c.beat + c.duration) {
-            if (c.midiNotes && c.midiNotes.length > 0) {
-              c.midiNotes.forEach((m) => chord.add(m));
-            } else if (c.rootMidi) {
-              chord.add(c.rootMidi);
-            }
-          }
-        }
-      }
     } else {
-      // Si la reproducción está en pausa, mostrar las notas pulsadas interactivamente
       if (showMelody) activeNotes.forEach((m) => melody.add(m));
-      if (showChords) activeChordNotes.forEach((m) => chord.add(m));
     }
 
     return { melody, chord };
-  }, [isPlaying, showMelody, showChords, currentBeat, parsedNotes, song.chords, activeNotes, activeChordNotes]);
-
-  const activeChord = useMemo(() => {
-    return song.chords.find(
-      (c) => currentBeat >= c.beat && currentBeat < c.beat + c.duration
-    );
-  }, [currentBeat, song.chords]);
+  }, [isPlaying, showMelody, showChords, currentBeat, parsedNotes, song.chords, activeNotes, activeChordNotes, selectedChord, activeChord]);
 
   // Grado del semitono respecto a la tónica activa
   const getDegreeNumber = (midi: number): number => {
@@ -213,11 +228,11 @@ export default function VirtualPiano() {
       {/* ── Lienzo del Teclado Interactivo ── */}
       <div
         ref={scrollRef}
-        className="w-full flex-1 min-h-0 overflow-x-auto flex justify-center px-4 pb-1 items-center"
+        className="w-full flex-1 min-h-0 overflow-x-auto flex justify-center px-4 pb-1.5 pt-0.5 items-center"
       >
         <div
-          className="relative bg-gray-950 p-1 rounded-b-xl border border-gray-800 shadow-inner flex-shrink-0 h-full max-h-[140px] min-h-[50px]"
-          style={{ width: totalWidth + 2 }}
+          className="relative bg-gray-950 p-1.5 rounded-b-xl border border-gray-800 shadow-inner flex-shrink-0 h-[135px] min-h-[120px] max-h-[145px]"
+          style={{ width: totalWidth + 3 }}
         >
           {/* ── Teclas Blancas ── */}
           {whiteKeys.map((key) => {
@@ -226,9 +241,9 @@ export default function VirtualPiano() {
             const isActive = isMelodyActive || isChordActive;
 
             const noteColor = getColor(key.midi, tonicMidi);
-            const voiceMatch = activeChord?.voices?.find((v: any) => v.midi === key.midi);
+            const voiceMatch = chordForLabels?.voices?.find((v) => v.midi === key.midi);
             const noteName = voiceMatch
-              ? voiceMatch.label
+              ? (voiceMatch.label || formatPitch(key.midi, spelling, currentKey).replace(/\d+/g, ''))
               : formatPitch(key.midi, spelling, currentKey).replace(/\d+/g, '');
             const x = getWhiteKeyX(key.midi);
             const isC = key.midi % 12 === 0;
@@ -238,7 +253,7 @@ export default function VirtualPiano() {
               <div
                 key={`white-key-${key.midi}`}
                 onPointerDown={() => handlePointerDown(key.midi)}
-                className="absolute top-0 rounded-b cursor-pointer border border-gray-400 flex flex-col items-center justify-end pb-1 transition-all duration-75 active:scale-y-[0.98] h-full"
+                className="absolute top-0 rounded-b cursor-pointer border border-gray-400 flex flex-col items-center justify-end pb-1.5 transition-all duration-75 active:scale-y-[0.98] h-full"
                 style={{
                   left: x,
                   width: whiteKeyWidth - 1,
@@ -256,7 +271,7 @@ export default function VirtualPiano() {
                 {/* Círculo indicador con el NOMBRE REAL DE LA NOTA y COLOR RELATIVO AL TRANSPONER */}
                 {isActive && (
                   <div
-                    className="min-w-[19px] h-[19px] px-1 rounded-full flex items-center justify-center text-[8.5px] font-bold text-white shadow-md mb-0.5 leading-none transition-all scale-105"
+                    className="min-w-[21px] h-[21px] px-1 rounded-full flex items-center justify-center text-[9px] font-bold text-white shadow-md mb-1 leading-none transition-all scale-105"
                     style={{ background: noteColor, border: '1.5px solid white' }}
                   >
                     {noteName}
@@ -264,7 +279,7 @@ export default function VirtualPiano() {
                 )}
 
                 {isC && !isActive && (
-                  <span className="text-[8px] font-bold font-mono text-gray-500">
+                  <span className="text-[9px] font-bold font-mono text-gray-500 mb-1">
                     C{octaveNum}
                   </span>
                 )}
@@ -279,9 +294,9 @@ export default function VirtualPiano() {
             const isActive = isMelodyActive || isChordActive;
 
             const noteColor = getColor(key.midi, tonicMidi);
-            const voiceMatch = activeChord?.voices?.find((v: any) => v.midi === key.midi);
+            const voiceMatch = chordForLabels?.voices?.find((v) => v.midi === key.midi);
             const noteName = voiceMatch
-              ? voiceMatch.label
+              ? (voiceMatch.label || formatPitch(key.midi, spelling, currentKey).replace(/\d+/g, ''))
               : formatPitch(key.midi, spelling, currentKey).replace(/\d+/g, '');
             const x = getBlackKeyX(key.midi);
             const semitones = ((key.midi - tonicMidi) % 12 + 12) % 12;
@@ -298,7 +313,7 @@ export default function VirtualPiano() {
                 style={{
                   left: x,
                   width: blackKeyWidth,
-                  height: '62%',
+                  height: '63%',
                   background: isActive ? activeBg : '#1E293B',
                   boxShadow: isActive
                     ? `0 0 14px 4px ${getColorAlpha(key.midi, tonicMidi, 0.85)}`
@@ -308,7 +323,7 @@ export default function VirtualPiano() {
               >
                 {isActive && (
                   <div
-                    className="min-w-[16px] h-[16px] px-0.5 rounded-full flex items-center justify-center text-[7.5px] font-bold text-white shadow-md mb-0.5 leading-none transition-all scale-105"
+                    className="min-w-[17px] h-[17px] px-0.5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shadow-md mb-0.5 leading-none transition-all scale-105"
                     style={{ background: noteColor, border: '1px solid white' }}
                   >
                     {noteName}

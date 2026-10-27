@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react';
 import usePlayerStore from '../../store/usePlayerStore';
 import { playTransport, pauseTransport, stopTransport, seekToBeat } from '../../audio/audioEngine';
-import { SCALE_MODES } from '../../utils/musicTheory';
+import { SCALE_MODES, formatScaleName } from '../../utils/musicTheory';
 import { getPositionInMeasures } from '../../utils/rhythmEngine';
 import TempoSwingPopover from './TempoSwingPopover';
 import KeyTransposePopover from './KeyTransposePopover';
@@ -89,10 +89,14 @@ export default function TransportBar() {
       pauseTransport();
       setPlaying(false);
     } else {
+      if (currentBeat >= song.totalBeats) {
+        seekToBeat(1);
+        setCurrentBeat(1);
+      }
       await playTransport();
       setPlaying(true);
     }
-  }, [isPlaying, setPlaying]);
+  }, [isPlaying, setPlaying, currentBeat, song.totalBeats, setCurrentBeat]);
 
   const handleStop = useCallback(() => {
     stopTransport();
@@ -186,7 +190,7 @@ export default function TransportBar() {
     addSongToCatalog(universalSong);
   };
 
-  const modeAbbr = MODE_ABBR[keyMode] ?? keyMode.slice(0, 3);
+  const modeAbbr = MODE_ABBR[keyMode] ?? formatScaleName(keyMode);
   const keyDisplay = `${currentKey} ${modeAbbr}`;
 
   return (
@@ -264,13 +268,14 @@ export default function TransportBar() {
               onClick={handlePlayPause}
               className="w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 flex items-center justify-center text-gray-950 shadow-md transition-all"
               title={isPlaying ? "Pausar" : "Reproducir"}
+              aria-label={isPlaying ? "Pausar" : "Reproducir"}
             >
               {isPlaying ? (
                 <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                   <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
                 </svg>
               ) : (
-                <svg className="w-5 h-5 fill-current translate-x-0.5" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
               )}

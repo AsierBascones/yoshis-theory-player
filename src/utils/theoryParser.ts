@@ -14,6 +14,17 @@ export interface RawNote {
   striped?: boolean;
   isAltered?: boolean;
   isRest?: boolean;
+  hand?: 'left' | 'right' | 'indeterminate';
+  voiceRole?:
+    | 'bass'
+    | 'accompaniment_chord'
+    | 'arpeggio_support'
+    | 'primary_melody'
+    | 'counter_melody'
+    | 'ornament'
+    | 'unclassified';
+  voiceConfidence?: number;
+  voiceRationale?: string;
 }
 
 export interface RawChord {
@@ -79,6 +90,17 @@ export interface ParsedNote {
   striped?: boolean;
   isAltered?: boolean;
   isRest: boolean;
+  hand?: 'left' | 'right' | 'indeterminate';
+  voiceRole?:
+    | 'bass'
+    | 'accompaniment_chord'
+    | 'arpeggio_support'
+    | 'primary_melody'
+    | 'counter_melody'
+    | 'ornament'
+    | 'unclassified';
+  voiceConfidence?: number;
+  voiceRationale?: string;
 }
 
 /**
@@ -262,6 +284,10 @@ export function parseTheoryNote(note: RawNote): ParsedNote {
     striped: isAltered,
     isAltered,
     isRest: Boolean(note.isRest),
+    hand: note.hand,
+    voiceRole: note.voiceRole,
+    voiceConfidence: note.voiceConfidence,
+    voiceRationale: note.voiceRationale,
   };
 }
 

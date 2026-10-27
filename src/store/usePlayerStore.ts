@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { UniversalSong, SongSection, KeySignature, ScaleMode } from '../types/music';
+import type { UniversalSong, SongSection, KeySignature, ScaleMode, UniversalChord } from '../types/music';
 import { SONG_CATALOG, snowMountainSong } from '../data/songs';
 import { resolvePitch, resolveChordVoicing, getTransposedChordSymbol, getKeyAtBeat } from '../utils/theoryEngine';
 import { resolveChordsWithVoiceLeading } from '../utils/voiceLeading';
@@ -13,8 +13,9 @@ import {
   setAudioTranspose,
   setSwingConfig,
   setAudioSustain,
+  setAudioLoop,
 } from '../audio/audioEngine';
-import { getOptimalTransposeInterval, transposeNoteLetter } from '../utils/musicTheory';
+import { getOptimalTransposeInterval, transposeNoteLetter, transposeChordSymbol } from '../utils/musicTheory';
 import { calculateMeasuresTimeline, calculateMeasuresForBarCount } from '../utils/rhythmEngine';
 import type { SectionData } from '../data/snowMountainData';
 import type { ParsedNote, RawNote, RawChord, MusicData } from '../utils/theoryParser';
@@ -38,6 +39,8 @@ interface PlayerState {
   loop: boolean;
   activeNotes: Set<number>;
   activeChordNotes: Set<number>;
+  selectedChord: UniversalChord | null;
+  setSelectedChord: (chord: UniversalChord | null) => void;
   showMelody: boolean;
   showChords: boolean;
   showInstrument: boolean;
@@ -174,12 +177,13 @@ function resolveSectionData(
     const chordKey = getKeyForBeat(chord.beat);
     const res = voiceLedChords[idx] || resolveChordVoicing(chord, chordKey, effectiveBaseOctave);
     const dynamicSymbol = getTransposedChordSymbol(chord, chordKey);
+    const effectiveSymbol = dynamicSymbol || res.symbol || (semitoneOffset !== 0 && chord.symbol ? transposeChordSymbol(chord.symbol, semitoneOffset, chordKey.tonic) : chord.symbol);
     return {
       ...chord,
       beat: chord.beat,
       duration: chord.duration,
       roman: chord.roman,
-      symbol: dynamicSymbol || res.symbol || chord.symbol,
+      symbol: effectiveSymbol,
       root: chord.rootSd || (chord as any).root,
       type: chord.type,
       quality: chord.quality as unknown as number,
@@ -239,7 +243,11 @@ function resolveSectionData(
     meters: section.meters,
     hasExplicitMeters: section.hasExplicitMeters,
     totalBeats,
-    keys: section.keys && section.keys.length > 0 ? section.keys : [{ beat: 1, scale: effectiveKey.scale, tonic: effectiveKey.tonic }],
+    keys: (section.keys && section.keys.length > 0 ? section.keys : [{ beat: 1, scale: effectiveKey.scale, tonic: effectiveKey.tonic }]).map((k) => ({
+      ...k,
+      tonic: semitoneOffset !== 0 ? transposeNoteLetter(k.tonic, semitoneOffset, effectiveKey.tonic) : k.tonic,
+      scale: k.scale || effectiveKey.scale,
+    })),
     notes: resolvedMelody as unknown as RawNote[],
     chords: resolvedChords,
   };
@@ -295,7 +303,7 @@ const initialCatalog = savedProject?.song && !SONG_CATALOG.some((s) => s.id === 
   ? [savedProject.song, ...SONG_CATALOG]
   : SONG_CATALOG;
 
-const usePlayerStore = create<PlayerState>((set, get) => ({
+export const usePlayerStore = create<PlayerState>((set, get) => ({
   catalog: initialCatalog,
   selectedSongId: initialSong.id,
   currentSong: initialSong,
@@ -310,6 +318,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   loop: true,
   activeNotes: new Set(),
   activeChordNotes: new Set(),
+  selectedChord: null,
   showMelody: true,
   showChords: true,
   showInstrument: true,
@@ -419,6 +428,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       isPlaying: false,
       activeNotes: new Set(),
       activeChordNotes: new Set(),
+      selectedChord: null,
     });
 
     audioSetBpm(targetSong.bpm);
@@ -444,6 +454,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       },
       (chordMidis) => {
         set({ activeChordNotes: new Set(chordMidis) });
+      },
+      () => {
+        set({ isPlaying: false, currentBeat: get().song.totalBeats });
       }
     );
 
@@ -490,6 +503,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       isPlaying: false,
       activeNotes: new Set(),
       activeChordNotes: new Set(),
+      selectedChord: null,
     });
 
     if (section.bpm && section.bpm !== get().bpm) {
@@ -513,6 +527,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       },
       (chordMidis) => {
         set({ activeChordNotes: new Set(chordMidis) });
+      },
+      () => {
+        set({ isPlaying: false, currentBeat: get().song.totalBeats });
       }
     );
 
@@ -656,9 +673,13 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       rowHeight: typeof val === 'function' ? val(state.rowHeight) : val,
     })),
   setVerticalRange: (range) => set({ verticalRange: range }),
-  setLoop: (val) => set({ loop: val }),
+  setLoop: (val) => {
+    set({ loop: val });
+    setAudioLoop(val);
+  },
   setActiveNotes: (notes) => set({ activeNotes: notes }),
   setActiveChordNotes: (notes) => set({ activeChordNotes: notes }),
+  setSelectedChord: (chord) => set({ selectedChord: chord }),
   setShowMelody: (val) => {
     set({ showMelody: val });
     setAudioToggles(val, get().showChords);

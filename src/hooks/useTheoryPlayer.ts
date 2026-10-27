@@ -33,6 +33,7 @@ import {
   seekToBeat as audioSeekToBeat,
   setBpm as audioSetBpm,
   setSwingConfig,
+  setAudioLoop,
   setAudioToggles,
   updateSongLive,
 } from '../audio/audioEngine';
@@ -224,6 +225,10 @@ export function useTheoryPlayer({ song, initialSectionId }: UseTheoryPlayerProps
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentBeat, setCurrentBeat] = useState<number>(1);
   const [loop, setLoop] = useState<boolean>(true);
+  const handleSetLoop = useCallback((val: boolean) => {
+    setLoop(val);
+    setAudioLoop(val);
+  }, []);
   const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
   const [activeChordNotes, setActiveChordNotes] = useState<Set<number>>(new Set());
 
@@ -279,6 +284,9 @@ export function useTheoryPlayer({ song, initialSectionId }: UseTheoryPlayerProps
       },
       (chordMidis) => {
         setActiveChordNotes(new Set(chordMidis));
+      },
+      () => {
+        setIsPlaying(false);
       }
     );
 
@@ -399,7 +407,7 @@ export function useTheoryPlayer({ song, initialSectionId }: UseTheoryPlayerProps
     isPlaying,
     currentBeat,
     loop,
-    setLoop,
+    setLoop: handleSetLoop,
     play,
     pause,
     togglePlay,

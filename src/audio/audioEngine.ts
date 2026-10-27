@@ -109,6 +109,9 @@ let tickCallback: ((beat: number) => void) | null = null;
 let noteOnCallback: ((midi: number) => void) | null = null;
 let noteOffCallback: ((midi: number) => void) | null = null;
 let chordCallback: ((midiNotes: number[]) => void) | null = null;
+let onSongEndedCallback: (() => void) | null = null;
+let scheduledEndEventId: number | null = null;
+export let isLoopActive = true;
 let rafId: number | null = null;
 let initialized = false;
 let isMelodyMuted = false;
@@ -116,6 +119,17 @@ let isChordsMuted = false;
 let globalSemitoneOffset = 0;
 let liveNotes: ParsedNote[] = [];
 let liveChords: MusicData['chords'] = [];
+
+export function setAudioLoop(active: boolean) {
+  isLoopActive = active;
+  if (isBrowser) {
+    Tone.getTransport().loop = active;
+  }
+}
+
+export function setOnSongEnded(cb: (() => void) | null) {
+  onSongEndedCallback = cb;
+}
 
 export function setAudioTranspose(semitoneOffset: number) {
   globalSemitoneOffset = semitoneOffset;
@@ -161,7 +175,8 @@ export function setupSong(
   onTick: (beat: number) => void,
   onNoteOn: (midi: number) => void,
   onNoteOff: (midi: number) => void,
-  onChordChange?: (midiNotes: number[]) => void
+  onChordChange?: (midiNotes: number[]) => void,
+  onEnded?: () => void
 ) {
   if (!isBrowser) return;
   if (!initialized) initAudio();
@@ -171,6 +186,7 @@ export function setupSong(
   noteOnCallback = onNoteOn;
   noteOffCallback = onNoteOff;
   chordCallback = onChordChange ?? null;
+  onSongEndedCallback = onEnded ?? null;
 
   liveNotes = notes;
   liveChords = song.chords;
@@ -186,11 +202,29 @@ export function setupSong(
 
   Tone.getTransport().bpm.value = song.bpm;
   Tone.getTransport().timeSignature = song.timeSignature;
-  Tone.getTransport().loop = true;
+  Tone.getTransport().loop = isLoopActive;
   Tone.getTransport().loopStart = 0;
 
   const totalDurationSeconds = song.totalBeats * (60 / song.bpm);
   Tone.getTransport().loopEnd = totalDurationSeconds;
+
+  if (scheduledEndEventId !== null) {
+    Tone.getTransport().clear(scheduledEndEventId);
+    scheduledEndEventId = null;
+  }
+
+  scheduledEndEventId = Tone.getTransport().schedule((time) => {
+    if (!isLoopActive) {
+      Tone.getDraw().schedule(() => {
+        pauseTransport();
+        if (currentSongData) {
+          currentSeekBeat = currentSongData.totalBeats;
+          tickCallback?.(currentSongData.totalBeats);
+        }
+        onSongEndedCallback?.();
+      }, time);
+    }
+  }, totalDurationSeconds);
 
   // 1. Part de Melodía programada con segundos absolutos desacoplados de compás y subdivisión
   const melodyEvents = notes.map((note, index) => {
@@ -301,6 +335,7 @@ export function stopTransport() {
   stopTick();
   pianoSampler?.releaseAll();
   fallbackSynth?.releaseAll();
+  currentSeekBeat = 1;
   tickCallback?.(1);
   chordCallback?.([]);
 }
@@ -309,7 +344,24 @@ export function setBpm(bpm: number) {
   if (!isBrowser) return;
   Tone.getTransport().bpm.value = bpm;
   if (currentSongData) {
-    Tone.getTransport().loopEnd = currentSongData.totalBeats * (60 / bpm);
+    const totalDurationSeconds = currentSongData.totalBeats * (60 / bpm);
+    Tone.getTransport().loopEnd = totalDurationSeconds;
+
+    if (scheduledEndEventId !== null) {
+      Tone.getTransport().clear(scheduledEndEventId);
+      scheduledEndEventId = Tone.getTransport().schedule((time) => {
+        if (!isLoopActive) {
+          Tone.getDraw().schedule(() => {
+            pauseTransport();
+            if (currentSongData) {
+              currentSeekBeat = currentSongData.totalBeats;
+              tickCallback?.(currentSongData.totalBeats);
+            }
+            onSongEndedCallback?.();
+          }, time);
+        }
+      }, totalDurationSeconds);
+    }
   }
 }
 
@@ -360,13 +412,12 @@ export async function triggerChordNotes(chordNotes: (string | number)[], duratio
 
   const noteData = chordNotes.map((n) => {
     if (typeof n === 'number') {
-      const midi = n + globalSemitoneOffset;
+      const midi = n;
       return { midi, note: Tone.Frequency(midi, 'midi').toNote() };
     }
     const midi = pitchToMidi(n);
     if (midi !== null) {
-      const transposed = midi + globalSemitoneOffset;
-      return { midi: transposed, note: Tone.Frequency(transposed, 'midi').toNote() };
+      return { midi, note: Tone.Frequency(midi, 'midi').toNote() };
     }
     return { midi: Tone.Frequency(n).toMidi(), note: n };
   });
@@ -410,7 +461,7 @@ export async function triggerAudition(
 
   if (melodyMidiOrPitch !== undefined && melodyMidiOrPitch !== null) {
     const noteToPlay = typeof melodyMidiOrPitch === 'number'
-      ? Tone.Frequency(melodyMidiOrPitch + globalSemitoneOffset, 'midi').toNote()
+      ? Tone.Frequency(melodyMidiOrPitch, 'midi').toNote()
       : melodyMidiOrPitch;
 
     if ((isSamplerLoaded || pianoSampler?.loaded) && pianoSampler) {
@@ -467,6 +518,21 @@ function startTick() {
       if (now - lastTickTime >= 80) {
         lastTickTime = now;
         const currentExactBeat = getCurrentExactBeat();
+
+        // Failsafe: Si el bucle está desactivado y el transporte alcanza o sobrepasa el final de la canción
+        if (!isLoopActive && currentSongData) {
+          const bpmNow = Tone.getTransport().bpm.value || 120;
+          const totalDuration = currentSongData.totalBeats * (60 / bpmNow);
+          if (Tone.getTransport().seconds >= totalDuration - 0.02) {
+            pauseTransport();
+            const finalBeat = currentSongData.totalBeats;
+            currentSeekBeat = finalBeat;
+            tickCallback(finalBeat);
+            onSongEndedCallback?.();
+            return;
+          }
+        }
+
         tickCallback(currentExactBeat);
       }
     }
@@ -484,6 +550,10 @@ function stopTick() {
 
 export function disposeAudio() {
   stopTick();
+  if (scheduledEndEventId !== null) {
+    Tone.getTransport().clear(scheduledEndEventId);
+    scheduledEndEventId = null;
+  }
   if (melodyPart) {
     melodyPart.dispose();
     melodyPart = null;

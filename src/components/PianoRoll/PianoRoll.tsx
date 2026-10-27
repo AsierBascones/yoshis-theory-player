@@ -23,6 +23,7 @@ import {
   applySwingTransform,
   getScaleSpelling,
   formatPitch,
+  formatScaleName,
   transposeNoteLetter,
   type DynamicScaleRow,
 } from '../../utils/musicTheory';
@@ -75,6 +76,10 @@ const MemoizedMelodyNote = React.memo(function MemoizedMelodyNote({
     ? `repeating-linear-gradient(45deg, ${noteColor}, ${noteColor} 4px, rgba(0, 0, 0, 0.45) 4px, rgba(0, 0, 0, 0.45) 8px)`
     : noteColor;
 
+  const noteNameWithOctave = note.name || Tone.Frequency(note.midi, 'midi').toNote();
+  const noteNameShort = noteNameWithOctave.replace(/\d+/g, '');
+  const displayMelodyName = w >= 28 ? noteNameWithOctave : noteNameShort;
+
   return (
     <div
       onClick={(e) => {
@@ -86,7 +91,9 @@ const MemoizedMelodyNote = React.memo(function MemoizedMelodyNote({
           ? 'brightness-150 ring-2 ring-white shadow-[0_0_12px_rgba(255,255,255,0.7)] z-20'
           : 'brightness-100 z-10'
       }`}
-      title={`${note.name} (Grado: ${note.sd}, Beat: ${note.beat}, Duración: ${note.duration} beats)`}
+      title={`${note.name} (Grado: ${note.sd}, Beat: ${note.beat}, Duración: ${note.duration} beats${
+        note.voiceRole ? ` | Rol: ${note.voiceRole}${note.hand ? ` [Mano: ${note.hand}]` : ''}` : ''
+      })`}
       style={{
         left: x,
         top: y + 2,
@@ -100,7 +107,15 @@ const MemoizedMelodyNote = React.memo(function MemoizedMelodyNote({
             : '0 1px 3px rgba(0,0,0,0.5)',
         opacity: isActive && isPlaying ? 1 : 0.95,
       }}
-    />
+    >
+      {w >= 14 && (
+        <div className="absolute inset-0 flex items-center pl-1.5 select-none overflow-hidden pointer-events-none">
+          <span className="text-[10px] font-bold tracking-tight opacity-95 font-mono drop-shadow-sm select-none text-white truncate">
+            {displayMelodyName}
+          </span>
+        </div>
+      )}
+    </div>
   );
 });
 
@@ -111,13 +126,15 @@ const MemoizedChordVoicing = React.memo(function MemoizedChordVoicing({
   computedRowHeight,
   topOctave,
   isChordActive,
+  onChordClick,
 }: {
-  chord: UniversalChord | any;
+  chord: UniversalChord;
   voice: ResolvedChordVoice;
   pixelsPerBeat: number;
   computedRowHeight: number;
   topOctave: number;
   isChordActive: boolean;
+  onChordClick?: (chord: UniversalChord) => void;
 }) {
   const x = (chord.beat - 1) * pixelsPerBeat;
   const w = Math.max(chord.duration * pixelsPerBeat - 2, 4);
@@ -136,32 +153,38 @@ const MemoizedChordVoicing = React.memo(function MemoizedChordVoicing({
     ? `repeating-linear-gradient(45deg, ${voice.color}75, ${voice.color}75 4px, rgba(0, 0, 0, 0.4) 4px, rgba(0, 0, 0, 0.4) 8px)`
     : getColorAlpha(voice.midi, 60, 0.45);
 
-  const displayLabel = voice.isBass && chord.inversion ? 'Bass' : (voice.label || voice.voiceNumber || '1');
+  const noteNameWithOctave = voice.pitch || Tone.Frequency(voice.midi, 'midi').toNote();
+  const noteNameShort = voice.noteLabel || noteNameWithOctave.replace(/\d+/g, '');
+  const displayNoteName = w >= 28 ? noteNameWithOctave : noteNameShort;
+  const voiceRole = voice.isBass && chord.inversion ? 'Bajo' : (voice.label || 'Voz');
 
   return (
     <div
-      className="absolute rounded-[3px] transition-all duration-100 hover:brightness-125 hover:opacity-90 hover:z-20 cursor-pointer pointer-events-none"
-      title={`Acorde ${chord.symbol || chord.customSymbol} (${chord.roman}): Voz ${displayLabel} (${voice.pitch})`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChordClick?.(chord);
+      }}
+      className="absolute rounded-[3px] transition-all duration-100 hover:brightness-125 hover:opacity-90 hover:z-20 cursor-pointer pointer-events-auto"
+      title={`Acorde ${chord.symbol || chord.customSymbol} (${chord.roman}): ${noteNameWithOctave} (${voiceRole})`}
       style={{
         left: x + 1,
         top: y + 2,
         width: w,
         height: Math.max(12, computedRowHeight - 4),
         background: isChordActive ? activeBackground : background,
-        border: `1.5px dashed ${voice.color}`,
+        border: isChordActive ? `2px solid ${voice.color}` : `1.5px dashed ${voice.color}`,
         boxShadow: isChordActive
-          ? `0 0 10px 1px ${getColorAlpha(voice.midi, 60, 0.45)}`
+          ? `0 0 12px 2px ${getColorAlpha(voice.midi, 60, 0.55)}, inset 0 0 4px ${getColorAlpha(voice.midi, 60, 0.3)}`
           : 'none',
-        zIndex: 2,
+        zIndex: isChordActive ? 15 : 2,
       }}
     >
-      {w > 12 && (
-        <div className="absolute inset-0 flex items-center pl-1.5 select-none overflow-hidden">
+      {w >= 14 && (
+        <div className="absolute inset-0 flex items-center pl-1.5 select-none overflow-hidden pointer-events-none">
           <span
-            className="text-[10px] font-bold tracking-tight opacity-95 font-mono drop-shadow-sm select-none"
-            style={{ color: '#ffffff' }}
+            className="text-[10px] font-bold tracking-tight opacity-95 font-mono drop-shadow-sm select-none text-white truncate"
           >
-            {displayLabel}
+            {displayNoteName}
           </span>
         </div>
       )}
@@ -177,17 +200,20 @@ const MemoizedChordBarBlock = React.memo(function MemoizedChordBarBlock({
   currentKey,
   keyMode,
 }: {
-  chord: UniversalChord | any;
+  chord: UniversalChord;
   pixelsPerBeat: number;
   isActive: boolean;
-  onClick: (notes: string[] | undefined, beat: number) => void;
+  onClick: (chord: UniversalChord) => void;
   currentKey?: string;
   keyMode?: string;
 }) {
   const left = (chord.beat - 1) * pixelsPerBeat;
   const width = chord.duration * pixelsPerBeat;
-  const rootStr = String(chord.rootSd || chord.root || '1');
-  const defaultDegreeColor = getDegreeColor(rootStr);
+  const rootStr = String(chord.rootSd || (chord as any).root || '1');
+  const effectiveDegreeStr = (chord.inversion && chord.inversion > 0 && chord.bassScaleDegree)
+    ? chord.bassScaleDegree
+    : rootStr;
+  const defaultDegreeColor = getDegreeColor(effectiveDegreeStr);
   const chordColor = chord.color || defaultDegreeColor.color;
   const isBorrowed = Boolean(chord.borrowed);
   const isApplied = Boolean(chord.applied && String(chord.applied) !== '0');
@@ -227,9 +253,14 @@ const MemoizedChordBarBlock = React.memo(function MemoizedChordBarBlock({
 
   return (
     <div
-      onClick={() => onClick(chord.notes, chord.beat)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick(chord);
+      }}
       title={`Tocar acorde ${displaySymbol} (${chord.roman})`}
-      className="absolute top-0 bottom-0 border-r border-gray-900/60 font-bold cursor-pointer hover:brightness-125 transition-all select-none"
+      className={`absolute top-0 bottom-0 border-r border-gray-900/60 font-bold cursor-pointer hover:brightness-125 transition-all select-none ${
+        isActive ? 'ring-2 ring-amber-400/90 shadow-md z-10' : ''
+      }`}
       style={{
         left: `${left}px`,
         width: `${width}px`,
@@ -289,6 +320,8 @@ export default function PianoRoll() {
     setCurrentBeat,
     setActiveNotes,
     setActiveChordNotes,
+    selectedChord,
+    setSelectedChord,
   } = usePlayerStore();
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -433,8 +466,8 @@ export default function PianoRoll() {
     );
   }, [parsedNotes, showMelody, visibleStartBeat, visibleEndBeat]);
 
-  const visibleChords = useMemo(() => {
-    return song.chords.filter(
+  const visibleChords = useMemo<UniversalChord[]>(() => {
+    return (song.chords as unknown as UniversalChord[]).filter(
       (c) => c.beat + c.duration >= visibleStartBeat && c.beat <= visibleEndBeat
     );
   }, [song.chords, visibleStartBeat, visibleEndBeat]);
@@ -564,35 +597,34 @@ export default function PianoRoll() {
     return idx;
   }, [currentBeat, song.chords]);
 
-  const activeChord = activeChordIndex !== -1 ? song.chords[activeChordIndex] : null;
+  const activeChord: UniversalChord | null = activeChordIndex !== -1 ? (song.chords[activeChordIndex] as unknown as UniversalChord) : null;
 
   const handleChordClick = useCallback(
-    async (chordNotes: string[] | undefined, chordBeat: number) => {
+    async (chord: UniversalChord) => {
       if (Tone.getContext().state !== 'running') {
         await Tone.start();
       }
 
       if (!isPlaying) {
-        setCurrentBeat(chordBeat);
-        seekToBeat(chordBeat);
+        setCurrentBeat(chord.beat);
+        seekToBeat(chord.beat);
       }
 
-      if (chordNotes && chordNotes.length > 0) {
+      // Selección persistente del acorde
+      setSelectedChord(chord);
+
+      const chordNotes = chord.notes ?? [];
+      if (chordNotes.length > 0) {
         triggerChordNotes(chordNotes, '2n');
 
         const midis = chordNotes
-          .map((p) => pitchToMidi(p))
+          .map((p: string) => pitchToMidi(p))
           .filter((m): m is number => m !== null);
         setActiveChordNotes(new Set(midis));
-
-        setTimeout(() => {
-          if (!usePlayerStore.getState().isPlaying) {
-            setActiveChordNotes(new Set());
-          }
-        }, 850);
+        // Sin timeout: la selección se mantiene estable en el Piano Roll hasta nueva selección
       }
     },
-    [isPlaying, setCurrentBeat, setActiveChordNotes]
+    [isPlaying, setCurrentBeat, setActiveChordNotes, setSelectedChord]
   );
 
   const handleSeekAndAudition = useCallback(
@@ -626,19 +658,25 @@ export default function PianoRoll() {
       }
       setActiveNotes(newActiveNotes);
 
-      const newActiveChordNotes = new Set<number>();
-      if (activeChordAtBeat && activeChordAtBeat.notes) {
-        activeChordAtBeat.notes.forEach((p) => {
-          const m = pitchToMidi(p);
-          if (m !== null) newActiveChordNotes.add(m);
-        });
+      // Si no hay un acorde seleccionado manualmente, muestra las notas del acorde auditado
+      const hasManualSelection = Boolean(usePlayerStore.getState().selectedChord);
+      if (!hasManualSelection && chordNotes.length > 0) {
+        const newActiveChordNotes = new Set<number>();
+        if (activeChordAtBeat && activeChordAtBeat.notes) {
+          activeChordAtBeat.notes.forEach((p) => {
+            const m = pitchToMidi(p);
+            if (m !== null) newActiveChordNotes.add(m);
+          });
+        }
+        setActiveChordNotes(newActiveChordNotes);
       }
-      setActiveChordNotes(newActiveChordNotes);
 
       setTimeout(() => {
         if (!usePlayerStore.getState().isPlaying) {
           setActiveNotes(new Set());
-          setActiveChordNotes(new Set());
+          if (!usePlayerStore.getState().selectedChord) {
+            setActiveChordNotes(new Set());
+          }
         }
       }, 600);
     },
@@ -816,7 +854,7 @@ export default function PianoRoll() {
               {/* Insignias / etiquetas flotantes doradas/ámbar de modulación estilo Hookpad */}
               {song.keys && song.keys.map((k, kIdx) => {
                 const left = (k.beat - 1) * pixelsPerBeat;
-                const scaleName = k.scale ? k.scale.charAt(0).toUpperCase() + k.scale.slice(1) : 'Major';
+                const scaleName = formatScaleName(k.scale);
                 return (
                   <div
                     key={`key-mod-badge-${kIdx}-${k.beat}`}
@@ -952,7 +990,7 @@ export default function PianoRoll() {
                 {visibleChords.map((chord, i) => {
                   const x = (chord.beat - 1) * pixelsPerBeat;
                   const w = chord.duration * pixelsPerBeat;
-                  const chordColor = chord.color ?? getColor(chord.rootMidi ?? 60, 60);
+                  const chordColor = chord.color ?? ((chord as any).rootMidi ? getColor((chord as any).rootMidi, 60) : '#888888');
                   const colorAlpha = getHexAlpha(chordColor, 0.03);
 
                   return (
@@ -972,11 +1010,14 @@ export default function PianoRoll() {
                 {/* Bloques de acordes de referencia en Piano Roll VIRTUALIZADOS (Deduplicación limpia) */}
                 {showChords &&
                   visibleChords.map((chord, chordIdx) => {
-                    const isChordActive = activeChord === chord;
+                    const isChordSelected = selectedChord
+                      ? (selectedChord === chord || selectedChord.id === chord.id || (selectedChord.beat === chord.beat && selectedChord.duration === chord.duration))
+                      : false;
+                    const isChordActive = isChordSelected || (activeChord === chord);
                     const rawVoices: ResolvedChordVoice[] =
-                      (chord as any).voices && (chord as any).voices.length > 0
-                        ? (chord as any).voices
-                        : resolveChordVoices(chord as any, { tonic: currentKey, scale: keyMode as any }, 4);
+                      chord.voices && chord.voices.length > 0
+                        ? chord.voices
+                        : resolveChordVoices(chord, { tonic: currentKey, scale: keyMode as ScaleMode }, 4);
 
                     // Deduplicación estricta por carril vertical: si dos voces coinciden en la misma coordenada 'y',
                     // se renderiza un único bloque priorizando 'Bass' si está invertido.
@@ -1004,6 +1045,7 @@ export default function PianoRoll() {
                           computedRowHeight={computedRowHeight}
                           topOctave={topOctave}
                           isChordActive={isChordActive}
+                          onChordClick={handleChordClick}
                         />
                       );
                     });
@@ -1055,7 +1097,10 @@ export default function PianoRoll() {
                 style={{ height: CHORD_BAR_HEIGHT, width: totalBeatsWidth }}
               >
                 {visibleChords.map((chord, idx) => {
-                  const isActive = activeChord === chord;
+                  const isChordSelected = selectedChord
+                    ? (selectedChord === chord || selectedChord.id === chord.id || (selectedChord.beat === chord.beat && selectedChord.duration === chord.duration))
+                    : false;
+                  const isActive = isChordSelected || (activeChord === chord);
                   const chordKey = getKeyAtBeat(song.keys, chord.beat);
                   return (
                     <MemoizedChordBarBlock

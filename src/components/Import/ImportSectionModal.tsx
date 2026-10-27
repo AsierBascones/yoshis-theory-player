@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import usePlayerStore from '../../store/usePlayerStore';
 import { isHookpadJson, parseHookpadSection, inferSectionTypeFromName } from '../../utils/hookpadImporter';
+import { formatScaleName } from '../../utils/musicTheory';
 import type { SectionType } from '../../types/music';
 
 export interface ImportSectionModalProps {
@@ -127,7 +128,7 @@ export default function ImportSectionModal({ isOpen, onClose, initialJson = '' }
           bars: sec.totalBars,
           meter: meterLabel,
           bpm: sec.bpm || currentSong.bpm,
-          key: `${sec.key.tonic} ${sec.key.scale}`,
+          key: `${sec.key.tonic} ${formatScaleName(sec.key.scale)}`,
           notesCount: sec.melody.length || notesCount,
           chordsCount: sec.chords.length || chordsCount,
         };

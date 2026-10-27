@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "npx vite-node src/utils/theoryEngine.test.ts && npx vite-node src/utils/voiceLeading.test.ts && npx vite-node src/utils/rhythmEngine.test.ts",
+    "test": "npx vite-node src/utils/theoryEngine.test.ts && npx vite-node src/utils/voiceLeading.test.ts && npx vite-node src/utils/rhythmEngine.test.ts && npx vite-node src/utils/uiInteraction.test.ts && npx vite-node src/utils/midi/midiEngine.test.ts && npx vite-node src/utils/transpositionAndMidiRecognition.test.ts && npx vite-node src/utils/midi/midiInterpreterSpecV21.test.ts && npx vite-node src/utils/midi/midiPhase3TonalHarmonic.test.ts && npx vite-node src/utils/midi/midiIntegrationPhase4Phase5.test.ts && npx vite-node src/utils/midi/midiPrecisionBenchmark.test.ts && npx vite-node src/utils/midi/midiHarmonicPrecisionRefinement.test.ts && npx vite-node src/utils/midi/midiTimingAndHarmonicAudit.test.ts && npx vite-node src/utils/midi/midiHarmonicSimplification.test.ts && npx vite-node src/utils/midi/midiVoiceSeparation.test.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },
